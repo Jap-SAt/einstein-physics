@@ -134,5 +134,59 @@ async def test_no_webgl():
         await s.close()
 
 
+async def test_reopen_during_audio_fade():
+    s = await open_page()
+    try:
+        await s.page.evaluate("Cosmos.open()")
+        await s.page.wait_for_timeout(400)
+        await s.page.evaluate("Cosmos.close()")
+        await s.page.wait_for_timeout(200)                     # inside the 0.6 s fade of the old engine
+        await s.page.evaluate("Cosmos.primeAudio(); Cosmos.open()")
+        await s.page.wait_for_timeout(1200)
+        r = await s.page.evaluate("({ open: Cosmos.isOpen(), audio: Cosmos.debug.audioState() })")
+        assert r == {'open': True, 'audio': 'running'}, r
+    finally:
+        await s.close()
+
+
+async def test_inflation_hud_never_cold():
+    s = await open_page()
+    try:
+        await s.page.evaluate("Cosmos.open()")
+        r = await s.page.evaluate("""() => { const r = document.querySelector('.cc input[type=range]'), out = [];
+          for (let u = 0.120; u < 0.1395; u += 0.001) { r.value = String(u); r.dispatchEvent(new Event('input', { bubbles: true })); Cosmos.debug.frame(0.016);
+            const txt = document.querySelector('[data-hud=temp]').textContent, m = txt.match(/10([⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+)/);
+            const exp = m ? parseInt([...m[1]].map(c => '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c) === 0 ? '-' : '⁻⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c) - 1).join(''), 10) : 0;
+            out.push({ u: +u.toFixed(3), exp, txt }); }
+          return out; }""")
+        cold = [x for x in r if x['exp'] < 26]
+        assert not cold, cold[:3]
+    finally:
+        await s.close()
+
+
+async def test_open_flash_has_no_centre():
+    s = await open_page()
+    try:
+        await s.page.evaluate("Cosmos.open()")
+        bg = await s.page.evaluate("getComputedStyle(document.querySelector('.cc-flash')).backgroundImage")
+        assert 'radial' not in bg, bg
+    finally:
+        await s.close()
+
+
+async def test_mobile_end_buttons_clear_of_captions():
+    s = await open_page(viewport=(390, 844))
+    try:
+        await s.page.evaluate("Cosmos.open(); for (let i = 0; i < 8; i++) document.querySelector('.cc [data-act=next]').click(); Cosmos.debug.frame(0.016)")
+        await s.page.wait_for_timeout(2600)
+        r = await s.page.evaluate("""() => { const R = q => document.querySelector(q).getBoundingClientRect(), e = R('.cc-end');
+          const hit = q => { const b = R(q); return b.height > 0 && !(e.bottom <= b.top || e.top >= b.bottom || e.right <= b.left || e.left >= b.right); };
+          return { ended: Cosmos.debug.state().u === 1, endShown: e.height > 0, hits: ['.cc-expert', '.cc-cap-text', '.cc-cap-title', '.cc-bigtime', '.cc-hud', '.cc-dock'].filter(hit) }; }""")
+        assert r['ended'] and r['endShown'] and not r['hits'], r
+    finally:
+        await s.close()
+
+
 if __name__ == '__main__':
     run_tests(globals())

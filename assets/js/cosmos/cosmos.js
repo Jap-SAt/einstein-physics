@@ -220,7 +220,7 @@ const Cosmos = (() => {
     s.vis.render(dt);
     if (s.engine) s.engine.update(t, era.id, s.playing && !s.ended, s.vis.strongPairs());
     s.ui.update({
-      t, u: s.u, tempK: P.temperature(t), tempApprox: P.isTemperatureApprox(t), scale: P.scaleFactor(t),
+      t, u: s.u, tempK: P.hudTemperature(t), tempApprox: P.isTemperatureApprox(t), scale: P.scaleFactor(t), modelDependent: P.isModelDependent(t),
       playing: s.playing && !s.ended, speed: s.speed,
       muted: s.engine ? s.engine.isMuted() : true, soundSuspended: s.engine ? s.engine.isSuspended() : false,
       eraIndex: s.eraIndex

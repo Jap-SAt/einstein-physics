@@ -196,11 +196,11 @@ const CosmosAudio = (() => {
       dispose() {
         if (disposed) return Promise.resolve();
         disposed = true;
+        if (shared === ctx) shared = null;                     // a session opened during the fade gets a fresh context
         const now = ctx.currentTime;
         master.gain.cancelScheduledValues(now); master.gain.setValueAtTime(master.gain.value, now); master.gain.linearRampToValueAtTime(0, now + FADE_OUT_S);
         return new Promise(resolve => setTimeout(resolve, FADE_OUT_S * 1000 + 50)).then(() => {
           sources.forEach(src => { try { src.stop(); } catch (e) {} });
-          if (shared === ctx) shared = null;
           return ctx.close().catch(() => {});
         });
       },

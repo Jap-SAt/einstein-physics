@@ -52,3 +52,14 @@ test('formatting', () => {
   assert.match(P.formatTime(P.ageNow()), /พันล้านปี$/);
   assert.equal(P.formatSci(1.5e26, 1), '1.5 × 10²⁶');
 });
+test('HUD temperature never dips during inflation and matches T(t) outside it', () => {
+  let prev = Infinity;
+  for (let k = -43; k <= 0; k += 0.05) {
+    const t = Math.pow(10, k), T = P.hudTemperature(t);
+    assert.ok(T <= prev * (1 + 1e-9), `rises at 1e${k.toFixed(2)}`); prev = T;
+    if (t >= P.CONST.T_INF_START && t < P.CONST.T_INF_END) assert.ok(T >= 1e26, `dips to ${T} at 1e${k.toFixed(2)}`);
+    if (t < P.CONST.T_INF_START || t >= P.CONST.T_INF_END) assert.equal(T, P.temperature(t));
+  }
+  assert.ok(P.isModelDependent(1e-34) && P.isModelDependent(1e-40) && !P.isModelDependent(1e-6));
+});
+test('the inflation fact does not describe a bright point', () => assert.ok(!P.ERAS[0].fact.includes('จุดสว่าง')));

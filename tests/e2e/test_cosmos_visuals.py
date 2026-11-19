@@ -165,5 +165,42 @@ async def test_nucleo_ratio():
         await s.close()
 
 
+async def test_no_screen_centre_flow():
+    s = await open_page()
+    try:
+        await setup(s, reducedMotion=True)
+        r = await s.page.evaluate("""() => {
+          const P = CosmosPhysics, E = P.ERAS, i = E.findIndex(e => e.id === 'cosmicDawn');
+          const u0 = E.slice(0, i).reduce((a, e) => a + e.width, 0), out = [];
+          for (const [fa, fb] of [[0.10, 0.14], [0.45, 0.49], [0.80, 0.84]]) {
+            const shot = f => { __frames(P.sliderToTime(u0 + E[i].width * f), 2); const g = __v.debug.galaxyPositions(), cam = __v.camera, v = new THREE.Vector3(), pts = [];
+              for (let k = 0; k < g.length; k += 3) { v.set(g[k], g[k+1], g[k+2]).project(cam); pts.push([v.x, v.y, v.z]); } return pts; };
+            const A = shot(fa), B = shot(fb); let sum = 0, n = 0;
+            for (let k = 0; k < A.length; k++) {
+              const a = A[k], b = B[k]; if (Math.abs(a[2]) > 1 || Math.abs(a[0]) > 0.9 || Math.abs(a[1]) > 0.9 || Math.hypot(a[0], a[1]) < 0.1) continue;
+              const dx = b[0] - a[0], dy = b[1] - a[1], m = Math.hypot(dx, dy); if (m < 1e-6) { n++; continue; }
+              sum += (dx * a[0] + dy * a[1]) / (m * Math.hypot(a[0], a[1])); n++; }
+            out.push({ f: fa, mean: sum / Math.max(1, n), n });
+          }
+          return out; }""")
+        for row in r:
+            assert row['n'] > 20 and abs(row['mean']) < 0.2, r
+    finally:
+        await s.close()
+
+
+async def test_nucleosynthesis_timing():
+    s = await open_page()
+    try:
+        await setup(s)
+        early = await s.page.evaluate("(() => { __frames(30, 2, { showLabels: true }); return { c: __v.debug.nucleiCounts(), l: __v.labelAnchors().map(a => a.text) }; })()")
+        assert early['c'] == {'H': 0, 'He': 0}, early
+        assert early['l'] and not any('He' in x for x in early['l']), early
+        mid = await s.page.evaluate("(() => { __frames(400, 2); return __v.debug.nucleiCounts(); })()")
+        assert mid['He'] > 0, mid
+    finally:
+        await s.close()
+
+
 if __name__ == '__main__':
     run_tests(globals())

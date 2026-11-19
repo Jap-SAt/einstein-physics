@@ -47,6 +47,8 @@ const CosmosLayers = (() => {
     let pairs = 0, formed = 0;
     const A = { p: new Float32Array(3), c: new Float32Array(3) }, B = { p: new Float32Array(3), c: new Float32Array(3) };
 
+    /** fusion window ≈ 45 s – 7 min, centred near 3 min (p = log t / log 1200 s ≈ 0.73) */
+    const nucleiFormed = p => smooth((p - 0.55) / 0.3);
     const centre = (k, out) => { out[0] = (h(k, 11) * 2 - 1) * HB; out[1] = (h(k, 12) * 2 - 1) * HB; out[2] = (h(k, 13) * 2 - 1) * HB; };
     const freeP = (i, p, speed, amp, salt, out) => {
       out[0] = (h(i, salt) * 2 - 1) * HB + amp * Math.sin(p * speed + h(i, salt + 3) * 20);
@@ -75,7 +77,7 @@ const CosmosLayers = (() => {
           set3(oc, v, v * 0.9, v * 0.45);
         } else { freeP(i, p, 110, 1.6, 61, op); set3(oc, 0.35, 0.55, 1.0); }
       } else if (e === ERA.nucleo || e === ERA.radiation || e === ERA.recomb) {
-        const f = e === ERA.nucleo ? smooth((p - 0.2) / 0.4) : 1;     // nuclei form across nucleosynthesis
+        const f = e === ERA.nucleo ? nucleiFormed(p) : 1;              // nuclei form after the deuterium bottleneck
         if (i < NUCLEONS) {
           let k, off = null, proton = true;
           if (i < HE_NUCLEI * 4) { k = Math.floor(i / 4); off = HE_OFF[i % 4]; proton = i % 4 < 2; }
@@ -151,7 +153,7 @@ const CosmosLayers = (() => {
         }
         geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
         updateLinks(eB === ERA.quark && m > 0.5);
-        formed = eB === ERA.nucleo ? smooth((b.pB - 0.2) / 0.4) : (eB > ERA.nucleo && eB <= ERA.recomb ? 1 : 0);
+        formed = eB === ERA.nucleo ? nucleiFormed(b.pB) : (eB > ERA.nucleo && eB <= ERA.recomb ? 1 : 0);
       },
       anchors(state) {
         const out = [], eB = state.blend.iB;
@@ -160,6 +162,8 @@ const CosmosLayers = (() => {
           for (let i = 0; i < QUARKS; i += 17) pick(i, QUARK_LABEL[Math.floor(i / 3) % 2] + ' ควาร์ก');
           for (let i = QUARKS; i < QUARKS + GLUONS; i += 23) if (state.blend.pB < 0.5) pick(i, 'g กลูออน');
           for (let i = QUARKS + GLUONS; i < HERO; i += 29) pick(i, 'e⁻');
+        } else if (eB === ERA.nucleo && formed < 0.5) {               // free protons and neutrons before fusion
+          for (let k = 0; k < HE_NUCLEI; k += 2) { pick(HE_NUCLEI * 4 + k * 11, 'p⁺'); pick(k * 4 + 2, 'n'); }
         } else if (eB === ERA.nucleo || eB === ERA.radiation) {
           for (let k = 0; k < HE_NUCLEI; k += 2) { pick(HE_NUCLEI * 4 + k * 11, 'p⁺ (¹H)'); pick(HE_NUCLEI * 4 + k * 11 + 5, 'p⁺ (¹H)'); pick(k * 4, '⁴He'); }
           if (eB === ERA.radiation) for (let i = QUARKS; i < QUARKS + GLUONS; i += 25) pick(i, 'γ โฟตอน');

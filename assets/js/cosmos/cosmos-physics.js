@@ -83,6 +83,17 @@ const CosmosPhysics = (() => {
     return T_PLANCK * Math.sqrt(CONST.T_START / Math.max(t, CONST.T_START));
   }
   const isTemperatureApprox = t => t < 1e-12;
+  /** before the end of inflation both a(t) and T(t) depend on the inflation model */
+  const isModelDependent = t => t < CONST.T_INF_END;
+  /** temperature for the HUD: during inflation the model's supercool-then-reheat dip (down to ~10³ K) would read as
+      "colder than recombination", so the HUD glides log-linearly from T(start of inflation) to the reheating
+      temperature and is flagged as model-dependent instead. Visuals and audio still use temperature(). */
+  function hudTemperature(t) {
+    const { T_INF_START: t0, T_INF_END: t1 } = CONST;
+    if (t < t0 || t >= t1) return temperature(t);
+    const f = (Math.log(t) - Math.log(t0)) / (Math.log(t1) - Math.log(t0));
+    return Math.exp(Math.log(T_PRE_INFLATION) + f * (Math.log(T_REHEAT) - Math.log(T_PRE_INFLATION)));
+  }
 
   /* ── eras (piecewise-log timeline) ── */
   const yr = y => y * YEAR_S;
@@ -90,7 +101,7 @@ const CosmosPhysics = (() => {
     { id: 'inflation', kind: 'main', start: CONST.T_START, end: 1e-32, width: 0.14, dur: 10,
       title: 'ยุคพลังค์และการพองตัว',
       text: 'เอกภพเริ่มจากสภาวะที่ร้อนและหนาแน่นอย่างยิ่ง แล้วอวกาศพองตัวแบบเอกซ์โพเนนเชียลอย่างน้อย 10²⁶ เท่าในเสี้ยววินาที',
-      fact: 'บิกแบงไม่ใช่การระเบิดจากจุดหนึ่งในอวกาศ แต่เป็นการขยายตัวของอวกาศเองทุกแห่งพร้อมกัน จุดสว่างในภาพเป็นเพียงการเปรียบเทียบ',
+      fact: 'บิกแบงไม่ใช่การระเบิดจากจุดหนึ่งในอวกาศ แต่เป็นการขยายตัวของอวกาศเองทุกแห่งพร้อมกัน ในภาพเราจึงอยู่ข้างในเอกภพที่ร้อนและยืดออกรอบตัว ไม่ได้มองลูกไฟจากข้างนอก',
       grade: { bloom: 2.4, tint: [0.85, 0.92, 1.0], exposure: 1.25 } },
     { id: 'electroweak', kind: 'bridge', start: 1e-32, end: 1e-12, width: 0.05, dur: 5,
       title: 'ยุคแห่งความร้อน',
@@ -173,7 +184,7 @@ const CosmosPhysics = (() => {
   }
 
   return {
-    CONST, ERAS, ageNow, scaleFactor, temperature, isTemperatureApprox,
+    CONST, ERAS, ageNow, scaleFactor, temperature, isTemperatureApprox, isModelDependent, hudTemperature,
     eraIndexAt, eraAt, eraProgress, timeToSlider, sliderToTime, formatTime, formatSci
   };
 })();

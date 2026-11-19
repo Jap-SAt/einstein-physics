@@ -33,6 +33,8 @@ const CosmosUI = (() => {
     const hud = el('div', 'cc-hud');
     const row = (k, key) => { const r = el('div', 'cc-hud-row'); r.appendChild(el('span', 'cc-hud-k', null, k)); const v = el('span', 'cc-hud-v mono', { 'data-hud': key }); r.appendChild(v); hud.appendChild(r); return v; };
     const hTime = row('เวลา', 'time'), hTemp = row('อุณหภูมิ', 'temp'), hScale = row('ขนาด a', 'scale');
+    const hNote = el('div', 'cc-hud-note', { 'data-hud': 'note', hidden: '' }, 'ช่วงนี้ a และ T เป็นค่าโดยประมาณตามแบบจำลองการพองตัว (ยังไม่มีการวัดยืนยัน)');
+    hud.appendChild(hNote);
     const hEra = el('div', 'cc-hud-era'); hud.appendChild(hEra);
     root.appendChild(hud);
 
@@ -100,7 +102,9 @@ const CosmosUI = (() => {
     const setAttr = (node, name, v) => { if (node.getAttribute(name) !== v) node.setAttribute(name, v); };
     const setCls = (node, name, on) => { if (node.classList.contains(name) !== on) node.classList.toggle(name, on); };
 
-    let expertTimer = 0, eraShown = null;
+    let expertTimer = 0, eraShown = null, lastEraAt = -1e9, fades = [];
+    const QUICK_MS = 500, FADE_OUT_MS = 280, FADE_IN_MS = 1000;
+    const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
     const pool = [];
 
     const ui = {
@@ -109,7 +113,8 @@ const CosmosUI = (() => {
         const time = P.formatTime(s.t);
         setText(hTime, time); setText(bigTime, time);
         setText(hTemp, (s.tempApprox ? '≈ ' : '') + P.formatSci(s.tempK) + ' K');
-        setText(hScale, scaleText(s.scale));
+        setText(hScale, (s.modelDependent ? '≈ ' : '') + scaleText(s.scale));
+        if (hNote.hidden === !!s.modelDependent) hNote.hidden = !s.modelDependent;
         if (!dragging && Math.abs(parseFloat(range.value) - s.u) > 5e-5) range.value = String(s.u);   // property, not an attribute
         setText(bPlay, s.playing ? '❚❚' : '▶');
         setAttr(bPlay, 'aria-pressed', s.playing ? 'true' : 'false');
@@ -120,16 +125,26 @@ const CosmosUI = (() => {
       },
       showEra(era) {
         if (!era || era === eraShown) return;
-        eraShown = era;
+        const first = !eraShown, now = performance.now(), quick = now - lastEraAt < QUICK_MS;   // scrubbing: swap, don't animate
+        eraShown = era; lastEraAt = now;
         clearTimeout(expertTimer);
         setText(hEra, era.title);
-        cap.classList.remove('show', 'expert-on');
-        void cap.offsetWidth;                                         // restart the fade
-        setText(capTitle, era.title); setText(capText, era.text);
-        cap.classList.add('show');
+        cap.classList.remove('expert-on');                            // old fact fades out with its own text
+        const swap = () => { setText(capTitle, era.title); setText(capText, era.text); };
+        fades.forEach(a => a.cancel()); fades = [];
+        if (first || quick || reduced() || !capTitle.animate) { swap(); cap.classList.add('show'); }
+        else {
+          const out = [capTitle, capText].map(n => n.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_OUT_MS, fill: 'forwards' }));
+          fades = out;
+          out[0].onfinish = () => {
+            if (eraShown !== era) return;
+            swap();
+            fades = [capTitle, capText].map(n => n.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: FADE_IN_MS, easing: 'ease-out' }));
+            out.forEach(a => a.cancel());
+          };
+        }
         if (era.fact) {
-          setText(expertText, era.fact);
-          expertTimer = setTimeout(() => cap.classList.add('expert-on'), EXPERT_DELAY_MS);
+          expertTimer = setTimeout(() => { setText(expertText, era.fact); cap.classList.add('expert-on'); }, EXPERT_DELAY_MS);
         }
       },
       setLabels(anchors) {
@@ -147,6 +162,7 @@ const CosmosUI = (() => {
       setLabelsOn(on) { labelsOn = !!on; setAttr(bLabels, 'aria-pressed', String(labelsOn)); if (!labelsOn) ui.setLabels([]); },
       dispose() {
         clearTimeout(expertTimer);
+        fades.forEach(a => a.cancel());
         range.removeEventListener('input', onInput); range.removeEventListener('change', onChange); range.removeEventListener('pointerup', onChange);
         dock.removeEventListener('click', onClick);
         root.remove();

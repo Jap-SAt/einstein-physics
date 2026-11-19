@@ -25,7 +25,7 @@ async def test_dom_and_a11y():
           role: __ui.root.getAttribute('role'), modal: __ui.root.getAttribute('aria-modal'),
           range: !!__ui.root.querySelector('input[type=range]'),
           ticks: __ui.root.querySelectorAll('.cc-tick').length,
-          hud: [...__ui.root.querySelectorAll('[data-hud]')].map(e => e.classList.contains('mono')),
+          hud: [...__ui.root.querySelectorAll('[data-hud]:not([data-hud=note])')].map(e => e.classList.contains('mono')),
           live: !!__ui.root.querySelector('[aria-live]'),
           stage: __ui.root.contains(__ui.stage)
         })""")
@@ -100,6 +100,43 @@ async def test_mobile_dock():
         }""")
         assert r['rows'] >= 2, r
         assert r['sw'] <= r['cw'] and r['rootSw'] <= r['vw'], r
+    finally:
+        await s.close()
+
+
+async def test_model_dependent_flag():
+    s = await open_page()
+    try:
+        await setup(s)
+        on = await s.page.evaluate("""() => { __ui.update(__state({ modelDependent: true, scale: 6.8e-52 }));
+          const n = __ui.root.querySelector('[data-hud=note]');
+          return { a: __ui.root.querySelector('[data-hud=scale]').textContent, note: !!n && n.offsetParent !== null && /แบบจำลอง/.test(n.textContent) }; }""")
+        assert on['a'].startswith('≈') and on['note'], on
+        off = await s.page.evaluate("""() => { __ui.update(__state({ modelDependent: false }));
+          const n = __ui.root.querySelector('[data-hud=note]'); return { a: __ui.root.querySelector('[data-hud=scale]').textContent, note: n.offsetParent !== null }; }""")
+        assert not off['a'].startswith('≈') and not off['note'], off
+    finally:
+        await s.close()
+
+
+async def test_era_change_fades_without_fact_glitch():
+    s = await open_page()
+    try:
+        await setup(s)
+        await s.page.wait_for_timeout(3600)                      # first era settled, expert box on
+        r = await s.page.evaluate("""() => new Promise(res => {
+          const E = CosmosPhysics.ERAS, title = __ui.root.querySelector('.cc-cap-title'), ex = __ui.root.querySelector('.cc-expert'),
+            exText = __ui.root.querySelector('.cc-expert-v'), t0 = performance.now(), out = [];
+          __ui.showEra(E[3]);
+          const tick = () => { const t = performance.now() - t0;
+            out.push({ t, title: +getComputedStyle(title).opacity, ex: +getComputedStyle(ex).opacity, txt: exText.textContent === E[3].fact });
+            if (t < 3600) requestAnimationFrame(tick); else res(out); };
+          tick(); })""")
+        assert any(x['t'] < 600 and x['title'] < 0.9 for x in r), 'title never faded'
+        bad = [x for x in r if x['t'] < 1900 and x['txt'] and x['ex'] > 0.05]
+        assert not bad, bad[:3]
+        last = r[-1]
+        assert last['txt'] and last['ex'] > 0.5 and last['title'] > 0.95, last
     finally:
         await s.close()
 

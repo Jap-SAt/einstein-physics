@@ -26,8 +26,8 @@ const CosmosVisuals = (() => {
     quark:       { from: { pos: [0, 4, 40],   target: [0, 0, 0], fov: 55 }, to: { pos: [-6, 6, 26], target: [0, 0, 0], fov: 50 } },
     nucleo:      { from: { pos: [-6, 6, 28],  target: [0, 0, 0], fov: 50 }, to: { pos: [8, 5, 34],  target: [0, 0, 0], fov: 50 } },
     radiation:   { from: { pos: [8, 5, 34],   target: [0, 0, 0], fov: 50 }, to: { pos: [0, 6, 46],  target: [0, 0, 0], fov: 52 } },
-    recomb:      { from: { pos: [0, 6, 46],   target: [0, 0, 0], fov: 52 }, to: { pos: [0, 12, 88], target: [0, 0, 0], fov: 55 } },
-    cosmicDawn:  { from: { pos: [0, 18, 92],  target: [0, 0, 0], fov: 55 }, to: { pos: [34, 22, 62], target: [0, 0, 0], fov: 50 } },
+    recomb:      { from: { pos: [0, 6, 46],   target: [0, 0, 0], fov: 52 }, to: { pos: [0, 11.4, 58.3], target: [0, 0, 0], fov: 55 } },   // × comoving scale 1.58 = cosmic dawn's first frame
+    cosmicDawn:  { from: { pos: [0, 18, 92],  target: [0, 0, 0], fov: 55 }, to: { pos: [44, 24, 78], target: [0, 0, 0], fov: 55 } },   // orbit at constant comoving radius: no dolly
     solar:       { from: { pos: [0, 14, 36],  target: [0, 0, 0], fov: 50 }, to: { pos: [9.5, 2.5, 10], target: [6, 0, 0], fov: 42 } }
   };
 
@@ -224,15 +224,17 @@ const CosmosVisuals = (() => {
     const state = { t: P.CONST.T_START, showGrid: false, showLabels: false, blend: blendAt(P.CONST.T_START), clock: 0 };
     const tmp = { a: new THREE.Vector3(), b: new THREE.Vector3(), ta: new THREE.Vector3(), tb: new THREE.Vector3() };
 
-    function cameraKey(eraIndex, p, outPos, outTarget) {
-      const k = CAMERA[P.ERAS[eraIndex].id], s = smooth(p);
-      outPos.set(lerp(k.from.pos[0], k.to.pos[0], s), lerp(k.from.pos[1], k.to.pos[1], s), lerp(k.from.pos[2], k.to.pos[2], s));
-      outTarget.set(lerp(k.from.target[0], k.to.target[0], s), lerp(k.from.target[1], k.to.target[1], s), lerp(k.from.target[2], k.to.target[2], s));
+    /** keyframe camera; in expanding eras the camera is a comoving observer (scaled with space), so the
+        expansion has no focus on screen: galaxies keep their screen positions and shrink against their spacing */
+    function cameraKey(eraIndex, p, t, outPos, outTarget) {
+      const k = CAMERA[P.ERAS[eraIndex].id], s = smooth(p), c = visualScale(eraIndex, t);
+      outPos.set(lerp(k.from.pos[0], k.to.pos[0], s), lerp(k.from.pos[1], k.to.pos[1], s), lerp(k.from.pos[2], k.to.pos[2], s)).multiplyScalar(c);
+      outTarget.set(lerp(k.from.target[0], k.to.target[0], s), lerp(k.from.target[1], k.to.target[1], s), lerp(k.from.target[2], k.to.target[2], s)).multiplyScalar(c);
       return lerp(k.from.fov, k.to.fov, s);
     }
     function applyCamera() {
       const b = state.blend;
-      const fovA = cameraKey(b.iA, b.pA, tmp.a, tmp.ta), fovB = cameraKey(b.iB, b.pB, tmp.b, tmp.tb);
+      const fovA = cameraKey(b.iA, b.pA, P.ERAS[b.iA].end, tmp.a, tmp.ta), fovB = cameraKey(b.iB, b.pB, state.t, tmp.b, tmp.tb);
       const target = tmp.ta.lerp(tmp.tb, b.mix);
       controls.target.copy(target);
       if (!userCam) {
