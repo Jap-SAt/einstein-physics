@@ -219,43 +219,6 @@ mjx-container{color:inherit}
 .pick.compact .ic{width:40px;height:40px;border-radius:11px}
 .pick .en{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:6px}
 
-/* ── cosmos overlay ── */
-.cosmos{position:fixed;inset:0;z-index:100;background:#000;color:#efe8da;opacity:0;transition:opacity .9s ease;overflow:hidden;font-family:'Inter','IBM Plex Sans Thai',system-ui,sans-serif}
-.cosmos.on{opacity:1}
-.cz-stage{position:absolute;inset:0}
-.cz-stage canvas{display:block;width:100%;height:100%;touch-action:none}
-.cz-top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;padding:18px 26px;background:linear-gradient(#000a,#0000)}
-.cz-brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#cdb58a}
-.cz-brand span{color:#8c8576;letter-spacing:.04em;text-transform:none}
-.cz-btn{border:1px solid #ffffff2a;color:#efe8da;border-radius:999px;padding:7px 14px;font-size:13px;background:#ffffff0d;backdrop-filter:blur(6px)}
-.cz-btn:hover{border-color:#e7c27d;color:#ffe2a8}
-.cz-cap{position:absolute;left:clamp(18px,4vw,56px);bottom:118px;max-width:min(520px,calc(100vw - 36px));transition:opacity .7s ease, transform .7s ease}
-.cz-cap.fade{opacity:0;transform:translateY(10px)}
-.cz-step{font-size:12px;color:#c9a46a;letter-spacing:.12em}
-.cz-time{font-size:13px;color:#e7c27d;margin-top:6px}
-.cz-title{font-size:clamp(28px,3.6vw,44px);font-weight:700;letter-spacing:-.02em;line-height:1.15;margin:6px 0 10px;color:#fff6e6;text-shadow:0 0 30px #000}
-.cz-txt{font-size:16px;line-height:1.8;color:#e4dccb;margin:0;text-shadow:0 0 18px #000}
-.cz-fact{margin-top:14px;font-size:14px;line-height:1.7;color:#bfb6a3;border-left:2px solid #c9a46a;padding-left:12px}
-.cz-fact b{color:#e7c27d;font-weight:600}
-.cz-bar{position:absolute;left:clamp(18px,4vw,56px);right:clamp(18px,4vw,56px);bottom:30px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.cz-ticks{flex:1;display:flex;gap:5px;min-width:240px}
-.cz-ticks button{flex:1;height:22px;position:relative;padding:0}
-.cz-ticks button i{position:absolute;left:0;right:0;top:9px;height:3px;border-radius:3px;background:#ffffff26;overflow:hidden}
-.cz-ticks button i b{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#c98a3a,#ffd98f)}
-.cz-ticks button:hover i{background:#ffffff40}
-.cz-ticks button span{position:absolute;left:0;top:-14px;font-size:10px;color:#8c8576;white-space:nowrap;opacity:0;transition:opacity .2s}
-.cz-ticks button:hover span{opacity:1}
-.cz-ctrl{display:flex;gap:6px}
-.cz-ctrl button{width:38px;height:38px;border-radius:999px;border:1px solid #ffffff2a;color:#efe8da;font-size:15px;background:#ffffff0d}
-.cz-ctrl button:hover{border-color:#e7c27d;color:#ffe2a8}
-.cz-clock{font-size:13px;color:#cdb58a;min-width:250px;text-align:right}
-.cz-clock small{display:block;font-size:10.5px;color:#8c8576;letter-spacing:.12em;text-transform:uppercase}
-.cz-end{display:none;gap:8px;margin-top:16px}
-.cz-end.on{display:flex}
-.cz-flash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,#fff8e6 0%,#ffd38a55 30%,#0000 70%);opacity:0;transition:opacity .6s}
-.cz-hint{position:absolute;right:26px;top:64px;font-size:12px;color:#8c8576}
-@media (max-width:700px){.cz-cap{bottom:150px}.cz-clock{min-width:0;text-align:left}.cz-hint{display:none}}
-
 /* MathJax: Tailwind's preflight makes every <svg> a block; keep inline equations inline */
 mjx-container > svg{display:inline-block}
 
@@ -316,3 +279,11 @@ mjx-container > svg{display:inline-block}
   .cc-expert{font-size:12.5px}
 }
 @media (prefers-reduced-motion:reduce){.cc,.cc-cap-title,.cc-cap-text,.cc-expert{transition:none}.cc-btn.cc-attn{animation:none}}
+.cc-flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,#fff8e6 0%,#ffd38a66 28%,#0000 70%)}
+.cc-end{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);display:none;gap:10px}
+.cc-end.on{display:flex}
+.cc-end .cc-btn{padding:10px 18px;font-size:14px;background:#0b0b14cc;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.cc-failed .cc-dock,.cc-failed .cc-hud,.cc-failed .cc-cap,.cc-failed .cc-flash,.cc-failed .cc-end{display:none}
+.cc-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 40px));padding:22px 24px;border-radius:16px;background:#0b0b14;border:1px solid #ffffff1a;text-align:center;line-height:1.7}
+.cc-error p{margin:0 0 14px;color:#e6dccb}
+@media (max-width:700px){.cc-end{bottom:200px}}
