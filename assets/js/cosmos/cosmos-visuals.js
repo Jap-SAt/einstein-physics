@@ -28,7 +28,7 @@ const CosmosVisuals = (() => {
     radiation:   { from: { pos: [8, 5, 34],   target: [0, 0, 0], fov: 50 }, to: { pos: [0, 6, 46],  target: [0, 0, 0], fov: 52 } },
     recomb:      { from: { pos: [0, 6, 46],   target: [0, 0, 0], fov: 52 }, to: { pos: [0, 12, 88], target: [0, 0, 0], fov: 55 } },
     cosmicDawn:  { from: { pos: [0, 18, 92],  target: [0, 0, 0], fov: 55 }, to: { pos: [34, 22, 62], target: [0, 0, 0], fov: 50 } },
-    solar:       { from: { pos: [0, 10, 52],  target: [0, 0, 0], fov: 50 }, to: { pos: [16, 3, 24], target: [4, 0, 0], fov: 45 } }
+    solar:       { from: { pos: [0, 14, 36],  target: [0, 0, 0], fov: 50 }, to: { pos: [9.5, 2.5, 10], target: [6, 0, 0], fov: 42 } }
   };
 
   /* ── shaders ── */
@@ -213,8 +213,13 @@ const CosmosVisuals = (() => {
     const grade = new THREE.ShaderPass(GRADE);
     composer.addPass(grade);
 
-    /* extension point for Task 4 layers: { update(state, dt), dispose?() } */
+    /* era layers (cosmos-layers.js): { update(state, dt), anchors(state), dispose?() } */
     const layers = [];
+    const lctx = { THREE, P, scene, camera, glowTex, smooth, lerp };
+    const L = typeof CosmosLayers !== 'undefined' ? CosmosLayers : null;
+    const heroL = L && L.hero(lctx), galL = L && L.galaxies(lctx);
+    if (L) layers.push(heroL, galL, L.grid(lctx, galL), L.solar(lctx));
+    const LABEL_MAX = 12, LABEL_GAP = 48, proj = new THREE.Vector3();
 
     const state = { t: P.CONST.T_START, showGrid: false, showLabels: false, blend: blendAt(P.CONST.T_START), clock: 0 };
     const tmp = { a: new THREE.Vector3(), b: new THREE.Vector3(), ta: new THREE.Vector3(), tb: new THREE.Vector3() };
@@ -283,6 +288,22 @@ const CosmosVisuals = (() => {
         bloom.setSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
         camera.aspect = w / h; camera.updateProjectionMatrix();
       },
+      heroCount: heroL ? heroL.count : 0,
+      /** screen-space label anchors (≤12, ≥48 px apart), empty when labels are off */
+      labelAnchors() {
+        if (!state.showLabels) return [];
+        const w = container.clientWidth, hgt = container.clientHeight, out = [];
+        camera.updateMatrixWorld();
+        for (const layer of layers) for (const a of layer.anchors(state)) {
+          if (out.length >= LABEL_MAX) return out;
+          proj.copy(a.pos).project(camera);
+          if (proj.z < -1 || proj.z > 1 || Math.abs(proj.x) > 0.95 || Math.abs(proj.y) > 0.95) continue;
+          const x = (proj.x + 1) / 2 * w, y = (1 - proj.y) / 2 * hgt;
+          if (out.every(o => Math.hypot(o.x - x, o.y - y) >= LABEL_GAP)) out.push({ text: a.text, x, y });
+        }
+        return out;
+      },
+      strongPairs: () => (heroL ? heroL.strongPairs() : 0),
       resetCamera() { userCam = false; },
       setQuality(q) {
         if (!TIERS[q]) return;
@@ -311,7 +332,12 @@ const CosmosVisuals = (() => {
         ambientCount: () => ambientGeo.drawRange.count,
         bloomStrength: () => bloom.strength,
         gradePassEnabled: () => grade.enabled,
-        gradeUniforms: () => ({ grain: grade.uniforms.uGrain.value, aberration: grade.uniforms.uAberration.value })
+        gradeUniforms: () => ({ grain: grade.uniforms.uGrain.value, aberration: grade.uniforms.uAberration.value }),
+        heroPositions: () => (heroL ? Array.from(heroL.positions()) : []),
+        galaxyPositions: () => (galL ? Array.from(galL.positions()) : []),
+        galaxyScale: t => (galL ? galL.scaleAt(t) : 1),
+        galaxyBox: () => (galL ? galL.box() : 0),
+        nucleiCounts: () => (heroL ? heroL.nucleiCounts() : { H: 0, He: 0 })
       },
       /* shared with Task 4 layers */
       internals: { THREE, P, scene, camera, glowTex, smooth, lerp, makeRng, blendAt }

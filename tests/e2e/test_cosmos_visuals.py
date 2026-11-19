@@ -90,5 +90,80 @@ async def test_quality_tiers():
         await s.close()
 
 
+async def test_scrub_determinism():
+    s = await open_page()
+    try:
+        await setup(s)
+        same = await s.page.evaluate("""() => { __frames(3e-9, 3); const a = __v.debug.heroPositions();
+            __frames(3.15576e7 * 2e9, 3); __frames(3e-9, 3); const b = __v.debug.heroPositions();
+            return a.length > 0 && a.length === b.length && a.every((x, i) => x === b[i]); }""")
+        assert same is True
+    finally:
+        await s.close()
+
+
+async def test_strong_lines_only_in_quark_era():
+    s = await open_page()
+    try:
+        await setup(s)
+        q = await s.page.evaluate("(() => { __frames(1e-9, 2); return __v.strongPairs(); })()")
+        a = await s.page.evaluate("(() => { __frames(1e-40, 2); return __v.strongPairs(); })()")
+        n = await s.page.evaluate("(() => { __frames(180, 2); return __v.strongPairs(); })()")
+        assert q > 0 and a == 0 and n == 0, (q, a, n)
+    finally:
+        await s.close()
+
+
+async def test_labels_cap_and_spacing():
+    s = await open_page()
+    try:
+        await setup(s)
+        anchors = await s.page.evaluate("(() => { __frames(1e-9, 3, { showLabels: true }); return __v.labelAnchors(); })()")
+        assert 0 < len(anchors) <= 12, len(anchors)
+        for i in range(len(anchors)):
+            for j in range(i + 1, len(anchors)):
+                dx, dy = anchors[i]['x'] - anchors[j]['x'], anchors[i]['y'] - anchors[j]['y']
+                assert (dx * dx + dy * dy) ** 0.5 >= 48, (anchors[i], anchors[j])
+        off = await s.page.evaluate("(() => { __frames(1e-9, 2, { showLabels: false }); return __v.labelAnchors().length; })()")
+        assert off == 0
+    finally:
+        await s.close()
+
+
+async def test_no_center_expansion():
+    s = await open_page()
+    try:
+        await setup(s)
+        r = await s.page.evaluate("""() => {
+            const Y = 3.15576e7, stats = t => { __frames(t, 2); const g = __v.debug.galaxyPositions(), n = g.length / 3;
+              let cx = 0, cy = 0, cz = 0; for (let i = 0; i < n; i++) { cx += g[i*3]; cy += g[i*3+1]; cz += g[i*3+2]; }
+              cx /= n; cy /= n; cz /= n; let s = 0, m = 0;
+              for (let k = 0; k < 4000; k++) { const i = (k * 7919) % n, j = (k * 104729 + 13) % n; if (i === j) continue;
+                s += Math.hypot(g[i*3]-g[j*3], g[i*3+1]-g[j*3+1], g[i*3+2]-g[j*3+2]); m++; }
+              return { c: [cx, cy, cz], d: s / m, n, box: __v.debug.galaxyBox() }; };
+            const t1 = 2e9 * Y, t2 = 6e9 * Y, a = stats(t1), b = stats(t2);
+            const expected = __v.debug.galaxyScale(t2) / __v.debug.galaxyScale(t1);
+            return { a, b, expected };
+        }""")
+        a, b, exp = r['a'], r['b'], r['expected']
+        assert a['n'] >= 400, a['n']
+        shift = sum((a['c'][i] - b['c'][i]) ** 2 for i in range(3)) ** 0.5
+        assert shift <= 0.05 * b['box'], (shift, b['box'])
+        ratio = b['d'] / a['d']
+        assert abs(ratio - exp) <= 0.05 * exp, (ratio, exp)
+    finally:
+        await s.close()
+
+
+async def test_nucleo_ratio():
+    s = await open_page()
+    try:
+        await setup(s)
+        c = await s.page.evaluate("(() => { __frames(1150, 2); return __v.debug.nucleiCounts(); })()")
+        assert c['He'] > 0 and 11 <= c['H'] / c['He'] <= 13, c
+    finally:
+        await s.close()
+
+
 if __name__ == '__main__':
     run_tests(globals())
