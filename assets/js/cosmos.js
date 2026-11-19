@@ -1,393 +1,671 @@
 /* ════════════════ cosmos: กำเนิดจักรวาล ════════════════
-   Full-screen dark-mode journey from the Big Bang to life, told in 9 stages.
-   One particle system (N points) morphs between stage layouts; each stage adds a few objects.
-   Palette and pacing: deep black, warm amber/gold light, slow drifting camera.
+   Full-screen, dark-mode journey from the Big Bang to life, told in 9 stages.
+
+   How it works
+   • One particle system (PARTICLES points) morphs between per-stage layouts. Each frame the current
+     stage writes target positions/colours (LAYOUTS[stage.id]); the points blend from a snapshot taken
+     when the stage began toward those targets.
+   • A few extra objects (flare, first stars, Sun, planets, Earth) fade in only in their own stage.
+   • Palette and pacing follow a cinematic look: deep black, warm amber/gold light, slow drifting camera.
+
    Facts checked against Planck 2018 (age 13.787 ± 0.020 Gyr), Big Bang nucleosynthesis
-   (~75% H / 25% He by mass), recombination ≈ 380,000 yr, Earth 4.54 Gyr, earliest life ≥ 3.5 Gyr. */
+   (~75% H / 25% He by mass ≈ 12 H : 1 He by number), recombination ≈ 380,000 yr,
+   Earth 4.54 Gyr, earliest undisputed life ≥ 3.5 Gyr.
+
+   Public API (unchanged): Cosmos.open([{ onClose }]), Cosmos.close(), Cosmos.isOpen()
+   Depends on globals from helpers.js: THREE, THREE.OrbitControls, Theme, sci; and route() from app.js. */
 const Cosmos = (() => {
-  const YR = 3.156e7;
+  'use strict';
+
+  /* ── constants ── */
+  const TAU = Math.PI * 2;
+  const YEAR = 3.156e7;                       // seconds in a year
+  const PARTICLES = 9000;
+  const NUCLEI = 3000;                        // nucleus centres used from the "nuclei" stage on
+  const HELIUM = 240;                         // centres [0, 240) are ⁴He (2p + 2n); the rest are ¹H
+  const CLUMPS = 34;                          // gas clumps that collapse into the first stars
+  const NUCLEUS_RADIUS = 30;                  // spread of nucleus centres (scene units)
+  // Particle roles. LEFTOVER particles have no nucleus: they are drawn as free plasma particles and,
+  // after recombination, as the decoupled CMB photons (a visual stand-in, not a physical conversion).
+  const ROLE = { PROTON: 0, NEUTRON: 1, ELECTRON: 2, LEFTOVER: 3 };
+  const HE_OFFSETS = [[0.32, 0.32, 0.32], [-0.32, -0.32, 0.32], [-0.32, 0.32, -0.32], [0.32, -0.32, -0.32]];
+  const QUARK_COLORS = [[1, 0.3, 0.22], [0.3, 1, 0.42], [0.32, 0.5, 1]];
+  const PLANETS = [ // [orbit radius, size, colour]
+    [6.5, 0.32, 0xb7a58f], [9.5, 0.55, 0xe2c08a], [13, 0.6, 0x3f7fd0], [18, 0.42, 0xc96a44], [26, 1.4, 0xd9b48a]
+  ];
+  const KEPLER = 7;                           // ω = KEPLER / r^1.5 for the disk and planets
+  const POINT_SIZE = 0.42;
+  const MAX_DT = 0.05;                        // clamp long frames (tab switch, slow GPU)
+  const CAPTION_DELAY_MS = 450;
+  const FLASH_MS = 350;
+  const CLOSE_FADE_MS = 700;
+
+  /* ── stages ──
+     age: [from, to] in seconds after the Big Bang (clock interpolates geometrically when from > 0)
+     dur: seconds on screen · blend: seconds to morph from the previous layout
+     cam: r = distance, el = elevation (deg), tx = focus x · bg: clear colour (0–1)
+     bgRate: how fast the background tint follows · growPoints: enlarge points as the camera pulls back */
   const STAGES = [
-    { title: 'จุดเริ่มต้น', era: '13,800 ล้านปีก่อน · t = 0', a0: 0, a1: 1e-43, dur: 6, blend: 1.5,
+    { id: 'origin', title: 'จุดเริ่มต้น', era: '13,800 ล้านปีก่อน · t = 0', age: [0, 1e-43], dur: 6, blend: 1.5,
       cam: { r: 22, el: 12 }, bg: [0, 0, 0],
       txt: 'ทุกสิ่งในเอกภพที่สังเกตได้ เริ่มจากสภาวะที่ร้อนและหนาแน่นอย่างยิ่ง ฟิสิกส์ที่เรารู้จักยังอธิบายช่วงก่อน 10⁻⁴³ วินาทีไม่ได้',
       fact: '<b>ผู้เชี่ยวชาญตรวจทาน:</b> บิกแบงไม่ใช่การระเบิดจากจุดหนึ่งในอวกาศ แต่เป็นการขยายตัวของอวกาศเองทุกแห่งพร้อมกัน ภาพจุดสว่างนี้เป็นเพียงการเปรียบเทียบ' },
-    { title: 'การพองตัว', era: 'Inflation · 10⁻³⁶ – 10⁻³² วินาที', a0: 1e-36, a1: 1e-32, dur: 6, blend: 0.6,
-      cam: { r: 46, el: 14 }, bg: [0.05, 0.025, 0.008],
+    { id: 'inflation', title: 'การพองตัว', era: 'Inflation · 10⁻³⁶ – 10⁻³² วินาที', age: [1e-36, 1e-32], dur: 6, blend: 0.6,
+      cam: { r: 46, el: 14 }, bg: [0.05, 0.025, 0.008], flash: 0.9,
       txt: 'อวกาศขยายตัวแบบเอกซ์โพเนนเชียล ขนาดเพิ่มขึ้นอย่างน้อย 10²⁶ เท่าในเสี้ยววินาที ความไม่สม่ำเสมอระดับควอนตัมถูกยืดจนกลายเป็นเมล็ดพันธุ์ของกาแล็กซี',
       fact: '<b>หลักฐาน:</b> รูปแบบอุณหภูมิของรังสีไมโครเวฟพื้นหลังที่ดาวเทียม Planck วัดได้ สอดคล้องกับทฤษฎีการพองตัว' },
-    { title: 'ซุปควาร์ก–กลูออน', era: '10⁻¹² – 10⁻⁶ วินาที', a0: 1e-12, a1: 1e-6, dur: 7, blend: 2.2,
+    { id: 'quarkGluon', title: 'ซุปควาร์ก–กลูออน', era: '10⁻¹² – 10⁻⁶ วินาที', age: [1e-12, 1e-6], dur: 7, blend: 2.2,
       cam: { r: 58, el: 18 }, bg: [0.08, 0.035, 0.012],
       txt: 'เอกภพร้อนเกินกว่าที่ควาร์กจะจับกลุ่มกัน ควาร์กและกลูออนจึงเคลื่อนที่อิสระ เมื่อเย็นลงถึงราว 1 ไมโครวินาที ควาร์กรวมกันเป็นโปรตอนและนิวตรอน',
       fact: '<b>หมายเหตุ:</b> สีแดง เขียว น้ำเงิน แทน “ประจุสี” ของควาร์กในแรงอย่างเข้ม ไม่ใช่สีที่ตามองเห็น' },
-    { title: 'นิวเคลียสแรก', era: '10 วินาที – 20 นาที', a0: 10, a1: 1200, dur: 8, blend: 2.6,
+    { id: 'nuclei', title: 'นิวเคลียสแรก', era: '10 วินาที – 20 นาที', age: [10, 1200], dur: 8, blend: 2.6,
       cam: { r: 50, el: 20 }, bg: [0.06, 0.03, 0.012],
       txt: 'โปรตอน (แดง) และนิวตรอน (เทา) หลอมรวมเป็นนิวเคลียสฮีเลียม เมื่อเอกภพขยายตัวจนเย็นลง ปฏิกิริยานิวเคลียร์ก็หยุด จุดสีน้ำเงินจาง ๆ คืออิเล็กตรอนอิสระ',
       fact: '<b>ผลลัพธ์:</b> ไฮโดรเจนราว 75% และฮีเลียมราว 25% โดยมวล ตรงกับองค์ประกอบของดาวฤกษ์ที่เก่าแก่ที่สุด (ย้อนดูบทฟิสิกส์นิวเคลียร์: ฟิวชัน)' },
-    { title: 'อะตอมแรกและแสงแรก', era: '≈ 380,000 ปี', a0: 5e4 * YR, a1: 3.8e5 * YR, dur: 9, blend: 2.6,
-      cam: { r: 82, el: 16 }, bg: [0, 0, 0],
+    { id: 'recombination', title: 'อะตอมแรกและแสงแรก', era: '≈ 380,000 ปี', age: [5e4 * YEAR, 3.8e5 * YEAR], dur: 9, blend: 2.6,
+      cam: { r: 82, el: 16 }, bg: [0, 0, 0], bgRate: 0.6, growPoints: true,
       txt: 'เอกภพเย็นลงเหลือราว 3,000 K อิเล็กตรอนถูกนิวเคลียสจับไว้เป็นอะตอม โฟตอนจึงไม่ถูกกระเจิงอีกและพุ่งออกไปอย่างอิสระ เอกภพโปร่งแสงเป็นครั้งแรก',
       fact: '<b>เชื่อมกับบทเรียน:</b> แสงนั้นยังมาถึงเราวันนี้ ถูกยืดจนเป็นคลื่นไมโครเวฟอุณหภูมิ 2.7 K เรียกว่ารังสีไมโครเวฟพื้นหลังของจักรวาล (CMB)' },
-    { title: 'ยุคมืดสู่ดาวฤกษ์ดวงแรก', era: '≈ 100 – 400 ล้านปี', a0: 1e8 * YR, a1: 4e8 * YR, dur: 9, blend: 3.5,
-      cam: { r: 86, el: 26 }, bg: [0.004, 0.004, 0.009],
+    { id: 'firstStars', title: 'ยุคมืดสู่ดาวฤกษ์ดวงแรก', era: '≈ 100 – 400 ล้านปี', age: [1e8 * YEAR, 4e8 * YEAR], dur: 9, blend: 3.5,
+      cam: { r: 86, el: 26 }, bg: [0.004, 0.004, 0.009], growPoints: true,
       txt: 'แรงโน้มถ่วงดึงแก๊สในบริเวณที่หนาแน่นกว่าเล็กน้อยให้ยุบตัว แกนกลางร้อนขึ้นจนเกิดฟิวชัน ดาวฤกษ์ดวงแรกจึงจุดแสงขึ้นในความมืด',
       fact: '<b>ธาตุหนัก:</b> คาร์บอน ออกซิเจน และเหล็ก เกิดจากฟิวชันในดาวฤกษ์ แล้วถูกกระจายออกไปด้วยซูเปอร์โนวา' },
-    { title: 'กาแล็กซี', era: '≈ 400 ล้าน – หลายพันล้านปี', a0: 4e8 * YR, a1: 5e9 * YR, dur: 10, blend: 3.5,
-      cam: { r: 78, el: 42 }, bg: [0.003, 0.003, 0.008],
+    { id: 'galaxy', title: 'กาแล็กซี', era: '≈ 400 ล้าน – หลายพันล้านปี', age: [4e8 * YEAR, 5e9 * YEAR], dur: 10, blend: 3.5,
+      cam: { r: 78, el: 42 }, bg: [0.003, 0.003, 0.008], growPoints: true,
       txt: 'ดาวฤกษ์และแก๊สรวมตัวเป็นกาแล็กซี การหมุนทำให้แผ่ออกเป็นจานและเกิดแขนกังหัน ทางช้างเผือกของเราก็เริ่มก่อตัวในยุคนี้',
       fact: '<b>เชื่อมกับบทเรียน:</b> ดาวโคจรรอบใจกลางกาแล็กซีด้วยหลักเดียวกับวงโคจรในบทกลศาสตร์ แรงโน้มถ่วงทำหน้าที่เป็นแรงสู่ศูนย์กลาง' },
-    { title: 'ระบบสุริยะ', era: '4,600 ล้านปีก่อน', a0: 9.15e9 * YR, a1: 9.25e9 * YR, dur: 10, blend: 3.5,
+    { id: 'solarSystem', title: 'ระบบสุริยะ', era: '4,600 ล้านปีก่อน', age: [9.15e9 * YEAR, 9.25e9 * YEAR], dur: 10, blend: 3.5,
       cam: { r: 58, el: 17 }, bg: [0.004, 0.003, 0.002],
       txt: 'เมฆแก๊สและฝุ่นที่มีธาตุหนักจากดาวรุ่นก่อนยุบตัวและหมุนเป็นจาน ใจกลางกลายเป็นดวงอาทิตย์ เศษในจานชนและรวมกันเป็นดาวเคราะห์',
       fact: '<b>ผู้เชี่ยวชาญตรวจทาน:</b> จานหมุนเร็วขึ้นเมื่อยุบตัว เพราะโมเมนตัมเชิงมุมอนุรักษ์ เหมือนนักสเก็ตที่หุบแขนแล้วหมุนเร็วขึ้น' },
-    { title: 'โลกและสิ่งมีชีวิต', era: '4,540 ล้านปีก่อน → ปัจจุบัน', a0: 9.25e9 * YR, a1: 13.8e9 * YR, dur: 14, blend: 3.5,
+    { id: 'life', title: 'โลกและสิ่งมีชีวิต', era: '4,540 ล้านปีก่อน → ปัจจุบัน', age: [9.25e9 * YEAR, 13.8e9 * YEAR], dur: 14, blend: 3.5,
       cam: { r: 44, el: 10, tx: 11 }, bg: [0.002, 0.002, 0.005],
       txt: 'โลกก่อตัวเมื่อ 4,540 ล้านปีก่อน และหลักฐานของสิ่งมีชีวิตมีอายุอย่างน้อย 3,500 ล้านปี DNA ในเซลล์ของเราประกอบจากอะตอมที่เกิดในบิกแบงและในดาวฤกษ์',
       fact: '<b>ฝุ่นดาว:</b> ไฮโดรเจนในร่างกายเราเกิดในไม่กี่นาทีแรกของเอกภพ ส่วนคาร์บอนและออกซิเจนมาจากดาวฤกษ์ เราจึงสร้างขึ้นจากฝุ่นดาวจริง ๆ' }
   ];
+  const LAST = STAGES.length - 1;
 
+  /** The single open session, or null. Every async callback checks `S === session` before acting. */
   let S = null;
 
-  /* ── helpers ── */
-  function glowTex(inner = 'rgba(255,255,255,1)', mid = 'rgba(255,255,255,.35)') {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
-    const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gr.addColorStop(0, inner); gr.addColorStop(0.25, mid); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-    const t = new THREE.CanvasTexture(c); return t;
+  /* ── small pure helpers ── */
+  const clamp01 = u => (u <= 0 ? 0 : u >= 1 ? 1 : u);
+  const smoothstep = u => { const x = clamp01(u); return x * x * (3 - 2 * x); };
+  const approach = (current, target, rate, dt) => current + (target - current) * Math.min(1, dt * rate);
+  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  function makeRng(seed) {                    // deterministic Park–Miller generator: same universe every time
+    let s = seed;
+    return () => (s = (s * 16807) % 2147483647) / 2147483647;
   }
-  function earthTex() {
-    const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
-    const sea = g.createLinearGradient(0, 0, 0, 256); sea.addColorStop(0, '#0d2f5c'); sea.addColorStop(0.5, '#1b5a9a'); sea.addColorStop(1, '#0d2f5c');
-    g.fillStyle = sea; g.fillRect(0, 0, 512, 256);
-    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let k = 0; k < 14; k++) {                       // continents as clusters of blobs
-      const cx = rnd() * 512, cy = 50 + rnd() * 156, n = 18 + rnd() * 30;
-      for (let j = 0; j < n; j++) {
-        const x = cx + (rnd() - 0.5) * 90, y = cy + (rnd() - 0.5) * 50, r = 6 + rnd() * 16;
-        g.fillStyle = rnd() < 0.7 ? '#2f6b3a' : '#7a6a45'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
-        g.beginPath(); g.arc((x + 512) % 512, y, r, 0, 7); g.fill();
-      }
-    }
-    g.fillStyle = '#e9f0f5'; g.fillRect(0, 0, 512, 14); g.fillRect(0, 242, 512, 14);
-    g.globalAlpha = 0.35; g.fillStyle = '#ffffff';
-    for (let j = 0; j < 160; j++) { g.beginPath(); g.ellipse(rnd() * 512, 20 + rnd() * 216, 8 + rnd() * 26, 3 + rnd() * 5, 0, 0, 7); g.fill(); }
-    return new THREE.CanvasTexture(c);
+  function gaussian(rnd) {
+    let u = 0;
+    while (u === 0) u = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * rnd());
   }
-  const ease = u => u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+  function writeRandomUnit(rnd, out, j, scale = 1) {
+    const x = gaussian(rnd), y = gaussian(rnd), z = gaussian(rnd), l = Math.hypot(x, y, z) || 1;
+    out[j] = x / l * scale; out[j + 1] = y / l * scale; out[j + 2] = z / l * scale;
+  }
+
   function fmtAge(sec) {
-    if (sec <= 1e-43) return '≈ 0 วินาที';
+    if (!(sec > 1e-43)) return '≈ 0 วินาที';            // also catches NaN and negatives
     if (sec < 1e-3) return sci(sec, 1) + ' วินาที';
     if (sec < 60) return sec.toFixed(1) + ' วินาที';
     if (sec < 3600) return (sec / 60).toFixed(1) + ' นาที';
-    const y = sec / YR;
-    if (y < 1e6) return Math.round(y).toLocaleString('en-US') + ' ปี';
-    return Math.round(y / 1e6).toLocaleString('en-US') + ' ล้านปี';
+    const years = sec / YEAR;
+    if (years < 1e6) return Math.round(years).toLocaleString('en-US') + ' ปี';
+    return Math.round(years / 1e6).toLocaleString('en-US') + ' ล้านปี';
+  }
+  function stageAge(st, u) {
+    const [from, to] = st.age;
+    return from > 0 ? from * Math.pow(to / from, u) : to * u;
   }
 
-  /* ── open / close ── */
-  function open() {
-    if (S) return;
-    const el = document.createElement('div'); el.className = 'cosmos'; el.id = 'cosmos';
+  /* ── textures (canvas-generated, no network) ── */
+  function glowTexture(inner, mid) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'), grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, inner); grad.addColorStop(0.25, mid); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+  function earthTexture() {
+    const W = 512, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'), rnd = makeRng(7);
+    const sea = g.createLinearGradient(0, 0, 0, H);
+    sea.addColorStop(0, '#0d2f5c'); sea.addColorStop(0.5, '#1b5a9a'); sea.addColorStop(1, '#0d2f5c');
+    g.fillStyle = sea; g.fillRect(0, 0, W, H);
+    for (let k = 0; k < 14; k++) {                        // continents: clusters of blobs, wrapped at the seam
+      const cx = rnd() * W, cy = 50 + rnd() * 156, blobs = 18 + rnd() * 30;
+      for (let j = 0; j < blobs; j++) {
+        const x = cx + (rnd() - 0.5) * 90, y = cy + (rnd() - 0.5) * 50, r = 6 + rnd() * 16;
+        g.fillStyle = rnd() < 0.7 ? '#2f6b3a' : '#7a6a45';
+        for (const wx of [x, (x + W) % W]) { g.beginPath(); g.arc(wx, y, r, 0, TAU); g.fill(); }
+      }
+    }
+    g.fillStyle = '#e9f0f5'; g.fillRect(0, 0, W, 14); g.fillRect(0, H - 14, W, 14);   // polar ice
+    g.globalAlpha = 0.35; g.fillStyle = '#ffffff';                                       // clouds
+    for (let j = 0; j < 160; j++) { g.beginPath(); g.ellipse(rnd() * W, 20 + rnd() * 216, 8 + rnd() * 26, 3 + rnd() * 5, 0, 0, TAU); g.fill(); }
+    return new THREE.CanvasTexture(c);
+  }
+
+  /* ── particle data ── */
+  function createParticleData() {
+    const rnd = makeRng(12345);
+    const d = {
+      dir: new Float32Array(PARTICLES * 3),   // random unit direction per particle
+      rr: new Float32Array(PARTICLES),        // ∛u → uniform density inside a sphere
+      r1: new Float32Array(PARTICLES), r2: new Float32Array(PARTICLES), r3: new Float32Array(PARTICLES),
+      centre: new Float32Array(NUCLEI * 3),   // nucleus centres
+      clump: new Float32Array(CLUMPS * 3),    // gas clump centres (first stars)
+      role: new Uint8Array(PARTICLES),
+      nucleus: new Int32Array(PARTICLES).fill(-1),
+      slot: new Uint8Array(PARTICLES)         // nucleon slot inside ⁴He, or electron index around it
+    };
+    for (let i = 0; i < PARTICLES; i++) {
+      writeRandomUnit(rnd, d.dir, i * 3);
+      d.rr[i] = Math.cbrt(rnd()); d.r1[i] = rnd(); d.r2[i] = rnd(); d.r3[i] = rnd();
+    }
+    for (let k = 0; k < NUCLEI; k++) writeRandomUnit(rnd, d.centre, k * 3, Math.cbrt(rnd()) * NUCLEUS_RADIUS);
+    for (let g = 0; g < CLUMPS; g++) {
+      const dist = 12 + rnd() * 30, a = rnd() * TAU;
+      d.clump[g * 3] = Math.cos(a) * dist; d.clump[g * 3 + 1] = (rnd() - 0.5) * 30; d.clump[g * 3 + 2] = Math.sin(a) * dist;
+    }
+    assignRoles(d);
+    return d;
+  }
+  /* 240 ⁴He × 4 nucleons + 2,760 ¹H protons = 3,720 nucleons (2,760 : 240 ≈ 12 : 1 → ~25% He by mass)
+     240 × 2 + 2,760 electrons            = 3,240 electrons
+     remaining                            = 2,040 LEFTOVER particles */
+  function assignRoles({ role, nucleus, slot }) {
+    const heNucleons = HELIUM * 4, hydrogen = NUCLEI - HELIUM, nucleons = heNucleons + hydrogen;
+    const heElectrons = HELIUM * 2, electrons = heElectrons + hydrogen;
+    for (let i = 0; i < PARTICLES; i++) {
+      if (i < heNucleons) {
+        nucleus[i] = i >> 2; slot[i] = i & 3; role[i] = slot[i] < 2 ? ROLE.PROTON : ROLE.NEUTRON;
+      } else if (i < nucleons) {
+        nucleus[i] = HELIUM + (i - heNucleons); role[i] = ROLE.PROTON;
+      } else {
+        const j = i - nucleons;
+        if (j < heElectrons) { role[i] = ROLE.ELECTRON; nucleus[i] = j >> 1; slot[i] = j & 1; }
+        else if (j < electrons) { role[i] = ROLE.ELECTRON; nucleus[i] = HELIUM + (j - heElectrons); }
+        else role[i] = ROLE.LEFTOVER;
+      }
+    }
+  }
+
+  /* ── per-stage layouts: each writes every particle's target position and colour ── */
+  function put(s, i, x, y, z, r, g, b) {
+    const j = i * 3, p = s.p.toPos, c = s.p.toCol;
+    p[j] = x; p[j + 1] = y; p[j + 2] = z; c[j] = r; c[j + 1] = g; c[j + 2] = b;
+  }
+  function nucleusCentre(d, i, out) {
+    const c = d.nucleus[i] * 3;
+    out[0] = d.centre[c]; out[1] = d.centre[c + 1]; out[2] = d.centre[c + 2];
+  }
+  function clumpPosition(d, i, t, out) {      // where a particle sits once its gas clump has collapsed
+    const n = d.nucleus[i] >= 0 ? d.nucleus[i] : i, g = n % CLUMPS, q = n * 3;
+    const r = 2.6 * d.rr[n] * (1 + 0.08 * Math.sin(t * 1.5 + n));
+    out[0] = d.clump[g * 3] + d.dir[q] * r; out[1] = d.clump[g * 3 + 1] + d.dir[q + 1] * r; out[2] = d.clump[g * 3 + 2] + d.dir[q + 2] * r;
+  }
+  function nucleiLayout(s, t, recombined) {
+    const d = s.d, P = s.tmp.p;
+    for (let i = 0; i < PARTICLES; i++) {
+      const j = i * 3, role = d.role[i];
+      if (role === ROLE.PROTON || role === ROLE.NEUTRON) {
+        nucleusCentre(d, i, P);
+        if (d.nucleus[i] < HELIUM) { const o = HE_OFFSETS[d.slot[i]]; P[0] += o[0]; P[1] += o[1]; P[2] += o[2]; }
+        if (recombined) put(s, i, P[0], P[1], P[2], 0.75, 0.62, 0.42);                 // neutral atoms
+        else if (role === ROLE.PROTON) put(s, i, P[0], P[1], P[2], 0.95, 0.36, 0.22);
+        else put(s, i, P[0], P[1], P[2], 0.6, 0.62, 0.7);
+      } else if (recombined && role === ROLE.ELECTRON) {                                // captured into orbit
+        nucleusCentre(d, i, P);
+        const a = t * 3 + d.r1[i] * TAU + d.slot[i] * Math.PI, R = d.nucleus[i] < HELIUM ? 1.15 : 0.85;
+        put(s, i, P[0] + Math.cos(a) * R, P[1] + Math.sin(a) * R * 0.5, P[2] + Math.sin(a) * R, 0.3, 0.42, 0.75);
+      } else if (recombined) {                                                          // CMB photons stream away
+        const r = d.rr[i] * 40 + t * 16, f = Math.max(0, 1 - t / 8.5);
+        put(s, i, d.dir[j] * r, d.dir[j + 1] * r, d.dir[j + 2] * r, 0.95 * f, 0.42 * f, 0.16 * f);
+      } else {                                                                          // free plasma particles
+        const r = d.rr[i] * 40;
+        put(s, i,
+          d.dir[j] * r + Math.sin(t * 9 + d.r1[i] * 50) * 1.4,
+          d.dir[j + 1] * r + Math.sin(t * 8 + d.r2[i] * 50) * 1.4,
+          d.dir[j + 2] * r + Math.sin(t * 10 + d.r3[i] * 50) * 1.4,
+          0.22, 0.32, 0.65);
+      }
+    }
+  }
+  const LAYOUTS = {
+    origin(s, t) {
+      const d = s.d;
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3, r = d.rr[i] * 0.3 * (1 + 0.2 * Math.sin(t * 3 + d.r1[i] * 6));
+        put(s, i, d.dir[j] * r, d.dir[j + 1] * r, d.dir[j + 2] * r, 1, 0.93, 0.76);
+      }
+    },
+    inflation(s, t) {
+      const d = s.d, R = 0.3 + 40 * (1 - Math.exp(-t * 1.1));
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3, r = d.rr[i] * R;
+        put(s, i, d.dir[j] * r, d.dir[j + 1] * r, d.dir[j + 2] * r, 0.95, 0.85 - 0.3 * d.rr[i], 0.7 - 0.5 * d.rr[i]);
+      }
+    },
+    quarkGluon(s, t) {
+      const d = s.d, wobble = 0.9, dim = 0.62;
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3, r = d.rr[i] * 42, q = QUARK_COLORS[i % 3];
+        put(s, i,
+          d.dir[j] * r + Math.sin(t * 6 + d.r1[i] * 40) * wobble,
+          d.dir[j + 1] * r + Math.sin(t * 7 + d.r2[i] * 40) * wobble,
+          d.dir[j + 2] * r + Math.sin(t * 5 + d.r3[i] * 40) * wobble,
+          (q[0] * 0.55 + 0.45) * dim, (q[1] * 0.55 + 0.28) * dim, (q[2] * 0.55 + 0.14) * dim);   // tinted toward hot gold
+      }
+    },
+    nuclei(s, t) { nucleiLayout(s, t, false); },
+    recombination(s, t) { nucleiLayout(s, t, true); },
+    firstStars(s, t) {
+      const d = s.d, P = s.tmp.p;
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3;
+        if (d.role[i] === ROLE.LEFTOVER) {                // photons have left the scene
+          const r = 180 + d.rr[i] * 40;
+          put(s, i, d.dir[j] * r, d.dir[j + 1] * r, d.dir[j + 2] * r, 0, 0, 0);
+          continue;
+        }
+        clumpPosition(d, i, t, P);
+        if (d.role[i] === ROLE.ELECTRON) { const a = t * 3 + d.r1[i] * TAU; P[0] += Math.cos(a) * 0.5; P[2] += Math.sin(a) * 0.5; }
+        put(s, i, P[0], P[1], P[2], 0.5, 0.56, 0.78);
+      }
+    },
+    galaxy(s, t) {
+      const d = s.d;
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3;
+        if (i % 7 === 0) {                                // central bulge
+          const r = d.rr[i] * 5;
+          put(s, i, d.dir[j] * r, d.dir[j + 1] * r * 0.6, d.dir[j + 2] * r, 1, 0.76, 0.44);
+          continue;
+        }
+        const r = 1.5 + 38 * Math.pow(d.r1[i], 0.9), arm = i % 2;
+        const ang = arm * Math.PI + 2.3 * Math.log(r) + (d.r2[i] - 0.5) * 0.85 - t * 2.2 / Math.sqrt(r);   // log spiral, differential rotation
+        const y = (d.r3[i] - 0.5) * 3 * Math.exp(-r / 14);
+        const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+        if (i % 29 === 0) put(s, i, x, y, z, 1, 0.42, 0.62);          // pink star-forming regions
+        else if (r < 6) put(s, i, x, y, z, 1, 0.74, 0.44);            // old golden core
+        else put(s, i, x, y, z, 0.55, 0.66, 0.95);                    // young blue arms
+      }
+    },
+    solarSystem(s, t) {
+      const d = s.d;
+      for (let i = 0; i < PARTICLES; i++) {
+        const r = 3.4 + 32 * Math.pow(d.r1[i], 1.25), w = KEPLER / Math.pow(r, 1.5);   // Kepler: ω ∝ r^(-3/2)
+        const ang = d.r2[i] * TAU + w * t, y = (d.r3[i] - 0.5) * 0.22 * Math.sqrt(r);
+        const f = Math.min(1, (r - 3.4) / 30);                                          // hot inner → cool outer
+        put(s, i, Math.cos(ang) * r, y, Math.sin(ang) * r, 1 - 0.1 * f, 0.88 - 0.5 * f, 0.62 - 0.55 * f);
+      }
+    },
+    life(s, t) {
+      const d = s.d, background = Math.floor(PARTICLES * 0.55), helixCount = PARTICLES - background;
+      const x0 = 19, turns = 3.5, R = 2.6, rungs = 46, spin = t * 0.6;
+      for (let i = 0; i < PARTICLES; i++) {
+        const j = i * 3;
+        if (i < background) {                             // distant starfield
+          const r = 140 + d.rr[i] * 80, b = 0.18 + 0.4 * d.r1[i];
+          put(s, i, d.dir[j] * r, d.dir[j + 1] * r, d.dir[j + 2] * r, b * 0.95, b * 0.95, b);
+          continue;
+        }
+        const m = i - background, u = m / helixCount, kind = m % 3;
+        if (kind < 2) {                                   // the two backbone strands
+          const a = u * TAU * turns + spin + kind * Math.PI;
+          put(s, i, x0 + Math.cos(a) * R, -14 + 28 * u, Math.sin(a) * R, kind ? 0.32 : 0.28, kind ? 0.6 : 0.9, kind ? 0.95 : 0.66);
+        } else {                                          // base pairs between them
+          const uq = Math.floor(u * rungs) / rungs, a = uq * TAU * turns + spin, along = d.r1[i] * 2 - 1;
+          put(s, i, x0 + Math.cos(a) * R * along, -14 + 28 * uq, Math.sin(a) * R * along, 0.85, 0.66, 0.36);
+        }
+      }
+    }
+  };
+
+  /* ── overlay DOM ── */
+  function createOverlay() {
+    const el = document.createElement('div');
+    el.className = 'cosmos';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-label', 'กำเนิดจักรวาล จากบิกแบงสู่สิ่งมีชีวิต');
     el.innerHTML = `
       <div class="cz-stage"></div><div class="cz-flash"></div>
       <div class="cz-top"><div class="cz-brand">กำเนิดจักรวาล <span>· จากบิกแบงสู่สิ่งมีชีวิต</span></div><button class="cz-btn" data-a="close">ปิด ✕</button></div>
-      <div class="cz-hint">ลากเพื่อหมุน · เลื่อนเพื่อซูม · ← → เปลี่ยนฉาก · Esc ปิด</div>
-      <div class="cz-cap"><div class="cz-step mono"></div><div class="cz-time mono"></div><h2 class="cz-title"></h2><p class="cz-txt"></p><div class="cz-fact"></div>
+      <div class="cz-hint">ลากเพื่อหมุน · เลื่อนเพื่อซูม · ← → เปลี่ยนฉาก · Space หยุด · Esc ปิด</div>
+      <div class="cz-cap" aria-live="polite"><div class="cz-step mono"></div><div class="cz-time mono"></div><h2 class="cz-title"></h2><p class="cz-txt"></p><div class="cz-fact"></div>
         <div class="cz-end"><button class="cz-btn" data-a="replay">↺ เล่นอีกครั้ง</button><button class="cz-btn" data-a="close">กลับสู่บทเรียน</button></div></div>
-      <div class="cz-bar"><div class="cz-ticks">${STAGES.map((s, i) => `<button data-i="${i}" title="${s.title}"><span>${s.title}</span><i><b></b></i></button>`).join('')}</div>
-        <div class="cz-ctrl"><button data-a="prev" title="ฉากก่อนหน้า">‹</button><button data-a="play" title="หยุด/เล่น">❚❚</button><button data-a="next" title="ฉากถัดไป">›</button></div>
-        <div class="cz-clock mono"><small>เวลาหลังบิกแบง</small><span></span></div></div>`;
+      <div class="cz-bar">
+        <div class="cz-ticks">${STAGES.map((st, i) => `<button data-i="${i}" title="${st.title}" aria-label="ไปฉาก ${i + 1}: ${st.title}"><span>${st.title}</span><i><b></b></i></button>`).join('')}</div>
+        <div class="cz-ctrl"><button data-a="prev" title="ฉากก่อนหน้า" aria-label="ฉากก่อนหน้า">‹</button><button data-a="play" title="หยุด/เล่น" aria-label="หยุด" aria-pressed="false">❚❚</button><button data-a="next" title="ฉากถัดไป" aria-label="ฉากถัดไป">›</button></div>
+        <div class="cz-clock mono"><small>เวลาหลังบิกแบง</small><span></span></div>
+      </div>`;
+    const q = sel => el.querySelector(sel);
+    const ui = {
+      stage: q('.cz-stage'), flash: q('.cz-flash'), cap: q('.cz-cap'),
+      step: q('.cz-step'), time: q('.cz-time'), title: q('.cz-title'), txt: q('.cz-txt'), fact: q('.cz-fact'), end: q('.cz-end'),
+      ticks: [...el.querySelectorAll('.cz-ticks b')], clock: q('.cz-clock span'),
+      playBtn: q('[data-a="play"]'), closeBtn: q('[data-a="close"]'), lastClock: ''
+    };
+    return { el, ui };
+  }
+
+  /* ── session lifecycle ── */
+  function open(options = {}) {
+    if (S) return;
+    if (!window.THREE || !THREE.OrbitControls) { console.warn('Cosmos: Three.js is not available'); return; }
+    const { el, ui } = createOverlay();
+    const s = {
+      el, ui,
+      onClose: typeof options.onClose === 'function' ? options.onClose : () => { if (typeof route === 'function') route(true); },
+      prevFocus: document.activeElement,
+      prevOverflow: document.body.style.overflow,
+      reducedMotion: prefersReducedMotion(),
+      timers: new Set(), raf: 0,
+      k: 0, t: 0, play: true, userCam: false
+    };
+    s.onKey = e => onKey(s, e);
+    s.onClick = e => onClick(s, e);
     document.body.appendChild(el);
     document.body.style.overflow = 'hidden';
-    S = { el };
-    Theme.set('dark');                       // the site switches to dark mode with the journey
-    try { build(); } catch (e) { console.error(e); close(); return; }
-    requestAnimationFrame(() => el.classList.add('on'));
-    el.addEventListener('click', onUI);
-    window.addEventListener('keydown', onKey);
-    flash(1);
-    goto(0);
+    S = s;
+    Theme.set('dark');                          // the whole site switches to dark mode with the journey
+    try { buildScene(s); }
+    catch (err) { console.error('Cosmos: could not start the 3D scene', err); close(); return; }
+    el.addEventListener('click', s.onClick);
+    window.addEventListener('keydown', s.onKey);
+    requestAnimationFrame(() => { if (S === s) el.classList.add('on'); });
+    ui.closeBtn.focus({ preventScroll: true });
+    flash(s, 1);
+    goto(s, 0);
+    startLoop(s);
   }
-  function close() {
-    if (!S) return;
-    const s = S; S = null;
-    cancelAnimationFrame(s.raf);
-    window.removeEventListener('keydown', onKey);
-    if (s.ro) s.ro.disconnect();
-    if (s.controls) s.controls.dispose();
-    if (s.scene) s.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
-    if (s.renderer) { s.renderer.dispose(); }
-    s.el.classList.remove('on');
-    setTimeout(() => s.el.remove(), 700);
-    document.body.style.overflow = '';
-    route(true);
-  }
-  function onKey(e) {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowRight') goto(S.k + 1);
-    else if (e.key === 'ArrowLeft') goto(S.k - 1);
-    else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-  }
-  function onUI(e) {
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.i != null) return goto(+b.dataset.i);
-    const a = b.dataset.a;
-    if (a === 'close') close();
-    else if (a === 'next') goto(S.k + 1);
-    else if (a === 'prev') goto(S.k - 1);
-    else if (a === 'play') togglePlay();
-    else if (a === 'replay') { S.done = false; goto(0); flash(1); }
-  }
-  function togglePlay() { S.play = !S.play; S.el.querySelector('[data-a="play"]').textContent = S.play ? '❚❚' : '▶'; }
-  function flash(v) { const f = S.el.querySelector('.cz-flash'); f.style.opacity = v; setTimeout(() => { if (f) f.style.opacity = 0; }, 350); }
 
-  /* ── scene ── */
-  function build() {
-    const stage = S.el.querySelector('.cz-stage');
+  function close() {
+    const s = S;
+    if (!s) return;
+    S = null;                                    // every pending callback now sees a stale session
+    cancelAnimationFrame(s.raf);
+    s.timers.forEach(clearTimeout); s.timers.clear();
+    window.removeEventListener('keydown', s.onKey);
+    s.el.removeEventListener('click', s.onClick);
+    if (s.ro) s.ro.disconnect();
+    disposeScene(s);
+    s.el.classList.remove('on');
+    setTimeout(() => s.el.remove(), CLOSE_FADE_MS);
+    document.body.style.overflow = s.prevOverflow;
+    if (s.prevFocus && typeof s.prevFocus.focus === 'function' && document.contains(s.prevFocus)) s.prevFocus.focus({ preventScroll: true });
+    s.onClose();
+  }
+
+  /** setTimeout that is cancelled on close and ignored if the session changed. */
+  function later(s, fn, ms) {
+    const id = setTimeout(() => { s.timers.delete(id); if (S === s) fn(); }, ms);
+    s.timers.add(id);
+    return id;
+  }
+
+  /* ── input ── */
+  function onKey(s, e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight') goto(s, s.k + 1);
+    else if (e.key === 'ArrowLeft') goto(s, s.k - 1);
+    else if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) setPlaying(s, !s.play); }
+  }
+  function onClick(s, e) {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.i !== undefined) { goto(s, Number(b.dataset.i)); return; }
+    switch (b.dataset.a) {
+      case 'close': close(); break;
+      case 'next': goto(s, s.k + 1); break;
+      case 'prev': goto(s, s.k - 1); break;
+      case 'play': setPlaying(s, !s.play); break;
+      case 'replay': setPlaying(s, true); flash(s, 1); goto(s, 0); break;
+    }
+  }
+  function setPlaying(s, playing) {
+    s.play = playing;
+    s.ui.playBtn.textContent = playing ? '❚❚' : '▶';
+    s.ui.playBtn.setAttribute('aria-label', playing ? 'หยุด' : 'เล่น');
+    s.ui.playBtn.setAttribute('aria-pressed', String(!playing));
+  }
+  function flash(s, strength) {
+    if (s.reducedMotion) return;
+    s.ui.flash.style.opacity = strength;
+    later(s, () => { s.ui.flash.style.opacity = 0; }, FLASH_MS);
+  }
+
+  /* ── stage control ── */
+  function goto(s, k) {
+    if (S !== s || !Number.isFinite(k)) return;
+    k = Math.max(0, Math.min(LAST, Math.round(k)));
+    const st = STAGES[k];
+    s.k = k; s.t = 0; s.userCam = false;
+    s.p.fromPos.set(s.p.pos); s.p.fromCol.set(s.p.col);      // snapshot: the new layout blends from here
+    if (st.flash) flash(s, st.flash);
+    const { ui } = s;
+    ui.cap.classList.add('fade');
+    if (s.captionTimer) { clearTimeout(s.captionTimer); s.timers.delete(s.captionTimer); }
+    s.captionTimer = later(s, () => {
+      s.captionTimer = 0;
+      ui.step.textContent = `${String(k + 1).padStart(2, '0')} / ${String(STAGES.length).padStart(2, '0')}`;
+      ui.time.textContent = st.era;
+      ui.title.textContent = st.title;
+      ui.txt.textContent = st.txt;
+      ui.fact.innerHTML = st.fact;                            // trusted, author-written constant
+      ui.end.classList.toggle('on', k === LAST);
+      ui.cap.classList.remove('fade');
+    }, CAPTION_DELAY_MS);
+  }
+
+  /* ── scene construction ── */
+  function buildScene(s) {
+    const { stage } = s.ui;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 1);
     stage.appendChild(renderer.domElement);
+    s.renderer = renderer;                                     // stored first so a later failure still disposes it
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 3000);
     camera.position.set(0, 4, 22);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = 0.06; controls.autoRotate = true; controls.autoRotateSpeed = 0.35;
-    controls.minDistance = 3; controls.maxDistance = 600; controls.enablePan = false;
-    controls.addEventListener('start', () => { if (S) S.userCam = true; });
+    Object.assign(controls, {
+      enableDamping: true, dampingFactor: 0.06, enablePan: false, minDistance: 3, maxDistance: 600,
+      autoRotate: !s.reducedMotion, autoRotateSpeed: 0.35
+    });
+    controls.addEventListener('start', () => { s.userCam = true; });   // the viewer takes the camera until the next stage
+    Object.assign(s, { scene, camera, controls });
+
     scene.add(new THREE.AmbientLight(0xffffff, 0.12));
     const sunLight = new THREE.PointLight(0xffd8a0, 0, 400); scene.add(sunLight);
     const keyLight = new THREE.DirectionalLight(0xfff1dc, 0); keyLight.position.set(-30, 12, 20); scene.add(keyLight);
 
-    const N = 9000;
-    const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+    // particles
+    s.d = createParticleData();
+    const n3 = PARTICLES * 3;
+    s.p = {
+      pos: new Float32Array(n3), col: new Float32Array(n3),
+      fromPos: new Float32Array(n3), fromCol: new Float32Array(n3),
+      toPos: new Float32Array(n3), toCol: new Float32Array(n3)
+    };
+    for (let i = 0; i < n3; i++) s.p.pos[i] = s.d.dir[i] * 0.05;     // everything starts at the centre
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const pTex = glowTex('rgba(255,255,255,1)', 'rgba(255,255,255,.45)');
-    const pMat = new THREE.PointsMaterial({ size: 0.42, map: pTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true });
-    const points = new THREE.Points(geo, pMat); points.frustumCulled = false; scene.add(points);
+    geo.setAttribute('position', new THREE.BufferAttribute(s.p.pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(s.p.col, 3));
+    const pointsMat = new THREE.PointsMaterial({
+      size: POINT_SIZE, map: glowTexture('rgba(255,255,255,1)', 'rgba(255,255,255,.45)'), vertexColors: true,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    const points = new THREE.Points(geo, pointsMat); points.frustumCulled = false; scene.add(points);
 
-    /* per-particle random constants */
-    let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const gauss = () => { let u = 0, v = 0; while (u === 0) u = rnd(); v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2832 * v); };
-    const dir = new Float32Array(N * 3), rr = new Float32Array(N), r1 = new Float32Array(N), r2 = new Float32Array(N), r3 = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      let x = gauss(), y = gauss(), z = gauss(); const l = Math.hypot(x, y, z) || 1;
-      dir[i * 3] = x / l; dir[i * 3 + 1] = y / l; dir[i * 3 + 2] = z / l;
-      rr[i] = Math.cbrt(rnd()); r1[i] = rnd(); r2[i] = rnd(); r3[i] = rnd();
-    }
-    /* nucleosynthesis bookkeeping: 240 He (2p+2n), 2760 H (p), electrons, leftover photons
-       → 2760 : 240 ≈ 12 : 1 by number ≈ 25% helium by mass */
-    const K = 3000, HE = 240, cen = new Float32Array(K * 3);
-    for (let k = 0; k < K; k++) { const d = Math.cbrt(rnd()) * 30; let x = gauss(), y = gauss(), z = gauss(); const l = Math.hypot(x, y, z) || 1; cen[k * 3] = x / l * d; cen[k * 3 + 1] = y / l * d; cen[k * 3 + 2] = z / l * d; }
-    const role = new Uint8Array(N), nuc = new Int32Array(N).fill(-1), slot = new Uint8Array(N);
-    // role: 0 proton, 1 neutron, 3 bound electron, 4 photon
-    for (let i = 0; i < N; i++) {
-      if (i < HE * 4) { nuc[i] = i >> 2; slot[i] = i & 3; role[i] = (i & 3) < 2 ? 0 : 1; }
-      else if (i < HE * 4 + (K - HE)) { nuc[i] = HE + (i - HE * 4); role[i] = 0; }
-      else { const j = i - (HE * 4 + K - HE); if (j < HE * 2) { role[i] = 3; nuc[i] = j >> 1; slot[i] = j & 1; } else if (j < HE * 2 + (K - HE)) { role[i] = 3; nuc[i] = HE + (j - HE * 2); } else role[i] = 4; }
-    }
-    const HEOFF = [[0.32, 0.32, 0.32], [-0.32, -0.32, 0.32], [-0.32, 0.32, -0.32], [0.32, -0.32, -0.32]];
-    const G = 34, clump = new Float32Array(G * 3);
-    for (let g = 0; g < G; g++) { const d = 12 + rnd() * 30, a = rnd() * 6.283, y = (rnd() - 0.5) * 30; clump[g * 3] = Math.cos(a) * d; clump[g * 3 + 1] = y; clump[g * 3 + 2] = Math.sin(a) * d; }
-
-    /* extra objects */
-    const flareMat = new THREE.SpriteMaterial({ map: glowTex('rgba(255,250,235,1)', 'rgba(255,205,130,.5)'), color: 0xffe6b0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
-    const flare = new THREE.Sprite(flareMat); flare.scale.setScalar(6); scene.add(flare);
-    const starTex = glowTex('rgba(255,255,255,1)', 'rgba(170,200,255,.5)');
+    // stage objects
+    const additiveSprite = (map, color, scale) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+      sp.scale.setScalar(scale); scene.add(sp); return sp;
+    };
+    const flare = additiveSprite(glowTexture('rgba(255,250,235,1)', 'rgba(255,205,130,.5)'), 0xffe6b0, 6);
+    const starTex = glowTexture('rgba(255,255,255,1)', 'rgba(170,200,255,.5)');
     const stars = [];
-    for (let g = 0; g < G; g++) {
-      const m = new THREE.SpriteMaterial({ map: starTex, color: 0xbcd2ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
-      const s = new THREE.Sprite(m); s.position.set(clump[g * 3], clump[g * 3 + 1], clump[g * 3 + 2]); s.scale.setScalar(4.5); scene.add(s); stars.push(s);
+    for (let g = 0; g < CLUMPS; g++) {
+      const star = additiveSprite(starTex, 0xbcd2ff, 4.5);
+      star.position.fromArray(s.d.clump, g * 3); stars.push(star);
     }
-    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex('rgba(255,248,225,1)', 'rgba(255,190,90,.55)'), color: 0xffd28a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
-    sunGlow.scale.setScalar(16); scene.add(sunGlow);
-    const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 20), new THREE.MeshBasicMaterial({ color: 0xfff1d0, transparent: true, opacity: 0 })); scene.add(sunCore);
-    const planets = [[6.5, 0.32, 0xb7a58f], [9.5, 0.55, 0xe2c08a], [13, 0.6, 0x3f7fd0], [18, 0.42, 0xc96a44], [26, 1.4, 0xd9b48a]].map(([r, s, c], k) => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(s, 24, 16), new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, transparent: true, opacity: 0 }));
-      m.userData = { r, ph: k * 1.7 }; scene.add(m); return m;
+    const sunGlow = additiveSprite(glowTexture('rgba(255,248,225,1)', 'rgba(255,190,90,.55)'), 0xffd28a, 16);
+    const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 20), new THREE.MeshBasicMaterial({ color: 0xfff1d0, transparent: true, opacity: 0 }));
+    scene.add(sunCore);
+    const planets = PLANETS.map(([radius, size, color], q) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 16), new THREE.MeshStandardMaterial({ color, roughness: 0.8, transparent: true, opacity: 0 }));
+      m.userData = { radius, phase: q * 1.7 }; scene.add(m); return m;
     });
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(5.5, 64, 40), new THREE.MeshStandardMaterial({ map: earthTex(), roughness: 0.85, transparent: true, opacity: 0 }));
-    earth.rotation.z = 0.41; earth.position.x = 4; scene.add(earth);   // 23.4° axial tilt
-    const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex('rgba(120,180,255,0)', 'rgba(110,170,255,.35)'), color: 0x8fc2ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
-    atmo.scale.setScalar(15); atmo.position.x = 4; scene.add(atmo);
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(5.5, 64, 40), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.85, transparent: true, opacity: 0 }));
+    earth.rotation.z = THREE.MathUtils.degToRad(23.4); earth.position.x = 4; scene.add(earth);    // axial tilt
+    const atmosphere = additiveSprite(glowTexture('rgba(120,180,255,0)', 'rgba(110,170,255,.35)'), 0x8fc2ff, 15);
+    atmosphere.position.x = 4;
 
-    Object.assign(S, {
-      renderer, scene, camera, controls, sunLight, keyLight, N, pos, col, geo, pMat,
-      dir, rr, r1, r2, r3, cen, role, nuc, slot, HEOFF, G, clump,
-      flare, stars, sunGlow, sunCore, planets, earth, atmo,
-      tp: new Float32Array(N * 3), tc: new Float32Array(N * 3), sp: new Float32Array(N * 3), sc: new Float32Array(N * 3),
-      k: 0, t: 0, play: true, userCam: false, bg: new THREE.Color(0, 0, 0), tgt: new THREE.Vector3(), done: false
+    Object.assign(s, {
+      geo, pointsMat,
+      obj: { flare, stars, sunGlow, sunCore, sunLight, keyLight, planets, earth, atmosphere },
+      bg: new THREE.Color(0, 0, 0), focus: new THREE.Vector3(),
+      tmp: { p: new Float32Array(3), color: new THREE.Color(), target: new THREE.Vector3(), offset: new THREE.Vector3(), sph: new THREE.Spherical() }
     });
-    // all particles start at the centre
-    for (let i = 0; i < N * 3; i++) pos[i] = dir[i] * 0.05;
-    function resize() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
-    S.ro = new ResizeObserver(resize); S.ro.observe(stage); resize();
-    let last = performance.now();
-    const loop = now => { if (!S) return; S.raf = requestAnimationFrame(loop); const dt = Math.min(0.05, (now - last) / 1000); last = now; frame(dt); };
-    S.raf = requestAnimationFrame(loop);
+
+    const resize = () => {
+      const w = stage.clientWidth, h = stage.clientHeight;
+      if (!w || !h) return;                                    // hidden or not laid out yet
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    };
+    s.ro = new ResizeObserver(resize); s.ro.observe(stage); resize();
   }
 
-  /* ── stage control ── */
-  function goto(k) {
-    if (!S) return;
-    k = Math.max(0, Math.min(STAGES.length - 1, k));
-    S.k = k; S.t = 0; S.userCam = false;
-    S.sp.set(S.pos); S.sc.set(S.col);       // snapshot for blending
-    const st = STAGES[k], cap = S.el.querySelector('.cz-cap');
-    cap.classList.add('fade');
-    setTimeout(() => {
-      if (!S) return;
-      cap.querySelector('.cz-step').textContent = `${String(k + 1).padStart(2, '0')} / ${String(STAGES.length).padStart(2, '0')}`;
-      cap.querySelector('.cz-time').textContent = st.era;
-      cap.querySelector('.cz-title').textContent = st.title;
-      cap.querySelector('.cz-txt').textContent = st.txt;
-      cap.querySelector('.cz-fact').innerHTML = st.fact;
-      cap.querySelector('.cz-end').classList.toggle('on', k === STAGES.length - 1);
-      cap.classList.remove('fade');
-    }, 450);
-    if (k === 1) flash(0.9);
-  }
-
-  /* ── per-stage particle layouts: write target positions (tp) and colours (tc) ── */
-  function layout(k, t) {
-    const { N, tp, tc, dir, rr, r1, r2, r3, cen, role, nuc, slot, HEOFF, G, clump } = S;
-    const set = (i, x, y, z, r, g, b) => { const j = i * 3; tp[j] = x; tp[j + 1] = y; tp[j + 2] = z; tc[j] = r; tc[j + 1] = g; tc[j + 2] = b; };
-    const nucPos = (i, out) => {                       // position of particle i's nucleus centre
-      const c = nuc[i] * 3; out[0] = cen[c]; out[1] = cen[c + 1]; out[2] = cen[c + 2];
-    };
-    const clumpPos = (i, out) => {                     // collapsed position inside a gas clump
-      const n = nuc[i] >= 0 ? nuc[i] : i, g = n % G, q = (n % N) * 3, s = 2.6 * rr[n % N] * (1 + 0.08 * Math.sin(t * 1.5 + n));
-      out[0] = clump[g * 3] + dir[q] * s; out[1] = clump[g * 3 + 1] + dir[q + 1] * s; out[2] = clump[g * 3 + 2] + dir[q + 2] * s;
-    };
-    const P = [0, 0, 0];
-    for (let i = 0; i < N; i++) {
-      const j = i * 3, dx = dir[j], dy = dir[j + 1], dz = dir[j + 2];
-      if (k === 0) {
-        const s = rr[i] * 0.3 * (1 + 0.2 * Math.sin(t * 3 + r1[i] * 6));
-        set(i, dx * s, dy * s, dz * s, 1, 0.93, 0.76);
-      } else if (k === 1) {
-        const R = 0.3 + 40 * (1 - Math.exp(-t * 1.1)), s = rr[i] * R;
-        set(i, dx * s, dy * s, dz * s, 0.95, 0.85 - 0.3 * rr[i], 0.7 - 0.5 * rr[i]);
-      } else if (k === 2) {
-        const s = rr[i] * 42, q = i % 3, w = 0.9;
-        const c = q === 0 ? [1, 0.3, 0.22] : q === 1 ? [0.3, 1, 0.42] : [0.32, 0.5, 1];
-        set(i, dx * s + Math.sin(t * 6 + r1[i] * 40) * w, dy * s + Math.sin(t * 7 + r2[i] * 40) * w, dz * s + Math.sin(t * 5 + r3[i] * 40) * w,
-          (c[0] * 0.55 + 0.45) * 0.62, (c[1] * 0.55 + 0.28) * 0.62, (c[2] * 0.55 + 0.14) * 0.62);
-      } else if (k === 3 || k === 4) {
-        const rl = role[i];
-        if (rl <= 1) {
-          nucPos(i, P); let ox = 0, oy = 0, oz = 0;
-          if (nuc[i] < 240) { const o = HEOFF[slot[i]]; ox = o[0]; oy = o[1]; oz = o[2]; }
-          if (k === 3) set(i, P[0] + ox, P[1] + oy, P[2] + oz, rl === 0 ? 0.95 : 0.6, rl === 0 ? 0.36 : 0.62, rl === 0 ? 0.22 : 0.7);
-          else set(i, P[0] + ox, P[1] + oy, P[2] + oz, 0.75, 0.62, 0.42);
-        } else if (rl === 3 && k === 4) {
-          nucPos(i, P); const a = t * 3 + r1[i] * 6.283 + slot[i] * Math.PI, R = nuc[i] < 240 ? 1.15 : 0.85;
-          set(i, P[0] + Math.cos(a) * R, P[1] + Math.sin(a) * R * 0.5, P[2] + Math.sin(a) * R, 0.3, 0.42, 0.75);
-        } else if (rl === 4 && k === 4) {             // decoupled photons stream away: the CMB
-          const s = rr[i] * 40 + t * 16, f = Math.max(0, 1 - t / 8.5);
-          set(i, dx * s, dy * s, dz * s, 0.95 * f, 0.42 * f, 0.16 * f);
-        } else {                                       // free electrons in the plasma
-          const s = rr[i] * 40;
-          set(i, dx * s + Math.sin(t * 9 + r1[i] * 50) * 1.4, dy * s + Math.sin(t * 8 + r2[i] * 50) * 1.4, dz * s + Math.sin(t * 10 + r3[i] * 50) * 1.4, 0.22, 0.32, 0.65);
-        }
-      } else if (k === 5) {
-        if (role[i] === 4) { const s = 180 + rr[i] * 40; set(i, dx * s, dy * s, dz * s, 0, 0, 0); continue; }
-        clumpPos(i, P);
-        if (role[i] === 3) { const a = t * 3 + r1[i] * 6.283; P[0] += Math.cos(a) * 0.5; P[2] += Math.sin(a) * 0.5; }
-        set(i, P[0], P[1], P[2], 0.5, 0.56, 0.78);
-      } else if (k === 6) {
-        if (i % 7 === 0) {                              // central bulge
-          const s = rr[i] * 5; set(i, dx * s, dy * s * 0.6, dz * s, 1, 0.76, 0.44); continue;
-        }
-        const r = 1.5 + 38 * Math.pow(r1[i], 0.9), arm = i % 2;
-        const ang = arm * Math.PI + 2.3 * Math.log(r) + (r2[i] - 0.5) * 0.85 - t * 2.2 / Math.sqrt(r);
-        const y = (r3[i] - 0.5) * 3 * Math.exp(-r / 14);
-        const hii = (i % 29 === 0), core = r < 6;
-        set(i, Math.cos(ang) * r, y, Math.sin(ang) * r,
-          hii ? 1 : core ? 1 : 0.55, hii ? 0.42 : core ? 0.74 : 0.66, hii ? 0.62 : core ? 0.44 : 0.95);
-      } else if (k === 7) {
-        const r = 3.4 + 32 * Math.pow(r1[i], 1.25), w = 7 / Math.pow(r, 1.5);   // Kepler: ω ∝ r^(-3/2)
-        const ang = r2[i] * 6.283 + w * t, y = (r3[i] - 0.5) * 0.22 * Math.sqrt(r);
-        const f = Math.min(1, (r - 3.4) / 30);
-        set(i, Math.cos(ang) * r, y, Math.sin(ang) * r, 1 - 0.1 * f, 0.88 - 0.5 * f, 0.62 - 0.55 * f);
-      } else {
-        const NB = Math.floor(N * 0.55);
-        if (i < NB) { const s = 140 + rr[i] * 80, b = 0.18 + 0.4 * r1[i]; set(i, dx * s, dy * s, dz * s, b * 0.95, b * 0.95, b); continue; }
-        const m = i - NB, M = N - NB, s = m / M, kind = m % 3, x0 = 19, turns = 3.5, R = 2.6;
-        const th = s * 6.283 * turns + t * 0.6;
-        if (kind < 2) {
-          const a = th + kind * Math.PI;
-          set(i, x0 + Math.cos(a) * R, -14 + 28 * s, Math.sin(a) * R, kind ? 0.32 : 0.28, kind ? 0.6 : 0.9, kind ? 0.95 : 0.66);
-        } else {                                        // base pairs between the two strands
-          const sq = Math.floor(s * 46) / 46, a = sq * 6.283 * turns + t * 0.6, u = r1[i] * 2 - 1;
-          set(i, x0 + Math.cos(a) * R * u, -14 + 28 * sq, Math.sin(a) * R * u, 0.85, 0.66, 0.36);
-        }
-      }
-    }
+  function disposeScene(s) {
+    if (!s.renderer) return;
+    const freed = new Set();                                   // shared textures/materials are freed once
+    const free = x => { if (x && !freed.has(x)) { freed.add(x); x.dispose(); } };
+    if (s.scene) s.scene.traverse(o => {
+      free(o.geometry);
+      [].concat(o.material || []).forEach(m => { free(m.map); free(m); });
+    });
+    if (s.controls) s.controls.dispose();
+    s.renderer.dispose();
+    s.renderer.forceContextLoss();                             // release the WebGL context now, not at GC
+    s.renderer.domElement.remove();
   }
 
   /* ── per frame ── */
-  function frame(dt) {
-    const st = STAGES[S.k];
-    if (S.play) {
-      S.t += dt;
-      if (S.t > st.dur && S.k < STAGES.length - 1) goto(S.k + 1);
-    }
-    const t = S.t, k = S.k;
-    layout(k, t);
-    const b = ease(t / st.blend), { pos, col, sp, sc, tp, tc } = S, n3 = S.N * 3;
-    for (let i = 0; i < n3; i++) { pos[i] = sp[i] + (tp[i] - sp[i]) * b; col[i] = sc[i] + (tc[i] - sc[i]) * b; }
-    S.geo.attributes.position.needsUpdate = true; S.geo.attributes.color.needsUpdate = true;
-
-    // background tint
-    const bgT = new THREE.Color(st.bg[0], st.bg[1], st.bg[2]);
-    S.bg.lerp(bgT, Math.min(1, dt * (k === 4 ? 0.6 : 1.2))); S.renderer.setClearColor(S.bg, 1);
-
-    // stage objects
-    const fade = (obj, target, rate = 1.5) => { obj.material.opacity += (target - obj.material.opacity) * Math.min(1, dt * rate); };
-    S.flare.material.opacity = k === 0 ? Math.min(1, t / 2) * (0.75 + 0.25 * Math.sin(t * 5)) : k === 1 ? Math.max(0, 1 - t / 1.4) : 0;
-    S.flare.scale.setScalar(k === 0 ? 4 + t * 1.2 : k === 1 ? 11 + t * 60 : 4);
-    S.stars.forEach((s, g) => {
-      const on = k === 5 ? Math.min(1, Math.max(0, (t - 3 - g * 0.09) / 1.2)) : 0;
-      fade(s, on * (0.8 + 0.2 * Math.sin(t * 3 + g)), k === 5 ? 3 : 1.2);
-      s.scale.setScalar(3.5 + 2 * on);
-    });
-    fade(S.sunGlow, k === 7 ? Math.min(1, t / 3) : 0); fade(S.sunCore, k === 7 ? Math.min(1, t / 3) : 0);
-    S.sunGlow.scale.setScalar(14 + Math.sin(t * 2) * 0.6);
-    S.sunLight.intensity += ((k === 7 ? 2.2 : 0) - S.sunLight.intensity) * Math.min(1, dt * 2);
-    S.planets.forEach((p, q) => {
-      const grow = k === 7 ? Math.min(1, Math.max(0, (t - 3 - q * 0.6) / 2.5)) : 0;
-      fade(p, grow, 2); p.scale.setScalar(0.2 + 0.8 * grow);
-      const w = 7 / Math.pow(p.userData.r, 1.5); p.position.set(Math.cos(p.userData.ph + w * t) * p.userData.r, 0, Math.sin(p.userData.ph + w * t) * p.userData.r);
-    });
-    fade(S.earth, k === 8 ? Math.min(1, t / 3) : 0); fade(S.atmo, k === 8 ? Math.min(0.85, t / 3) : 0);
-    S.earth.rotation.y += dt * 0.12;
-    S.keyLight.intensity += ((k === 8 ? 1.3 : 0) - S.keyLight.intensity) * Math.min(1, dt * 2);
-
-    // camera: drift toward the stage framing unless the viewer took control
-    const c = st.cam; S.tgt.lerp(new THREE.Vector3(c.tx || 0, 0, 0), Math.min(1, dt * 0.8));
-    S.controls.target.copy(S.tgt);
-    if (!S.userCam) {
-      const off = S.camera.position.clone().sub(S.tgt), sph = new THREE.Spherical().setFromVector3(off);
-      sph.radius += (c.r - sph.radius) * Math.min(1, dt * 0.7);
-      sph.phi += ((Math.PI / 2 - c.el * Math.PI / 180) - sph.phi) * Math.min(1, dt * 0.7);
-      S.camera.position.copy(S.tgt).add(new THREE.Vector3().setFromSpherical(sph));
-    }
-    S.controls.update();
-    // keep particles legible when the camera pulls back for the large-scale stages
-    const dist = S.camera.position.distanceTo(S.tgt);
-    S.pMat.size = (k >= 4 && k <= 6) ? Math.min(1.2, 0.34 + dist * 0.009) : 0.42;
-    S.renderer.render(S.scene, S.camera);
-
-    // timeline + clock
-    const ticks = S.el.querySelectorAll('.cz-ticks b');
-    ticks.forEach((bb, i) => bb.style.width = (i < k ? 100 : i > k ? 0 : Math.min(100, 100 * t / st.dur)) + '%');
-    const u = Math.min(1, t / st.dur);
-    const age = st.a0 > 0 ? st.a0 * Math.pow(st.a1 / st.a0, u) : st.a1 * u;
-    S.el.querySelector('.cz-clock span').textContent = fmtAge(age);
+  function startLoop(s) {
+    let last = performance.now();
+    const tick = now => {
+      if (S !== s) return;
+      s.raf = requestAnimationFrame(tick);
+      const dt = Math.min(MAX_DT, Math.max(0, (now - last) / 1000));
+      last = now;
+      frame(s, dt);
+    };
+    s.raf = requestAnimationFrame(tick);
   }
 
-  return { open, close, isOpen: () => !!S };
+  function frame(s, dt) {
+    if (s.play) {
+      s.t += dt;
+      if (s.t > STAGES[s.k].dur && s.k < LAST) goto(s, s.k + 1);
+    }
+    const st = STAGES[s.k];
+    LAYOUTS[st.id](s, s.t);
+    blendParticles(s, st);
+    updateBackground(s, st, dt);
+    updateStageObjects(s, st, dt);
+    updateCamera(s, st, dt);
+    s.renderer.render(s.scene, s.camera);
+    updateHud(s, st);
+  }
+
+  function blendParticles(s, st) {
+    const w = smoothstep(s.t / st.blend), { pos, col, fromPos, fromCol, toPos, toCol } = s.p;
+    for (let i = 0, n = pos.length; i < n; i++) {
+      pos[i] = fromPos[i] + (toPos[i] - fromPos[i]) * w;
+      col[i] = fromCol[i] + (toCol[i] - fromCol[i]) * w;
+    }
+    s.geo.attributes.position.needsUpdate = true;
+    s.geo.attributes.color.needsUpdate = true;
+  }
+
+  function updateBackground(s, st, dt) {
+    s.tmp.color.setRGB(st.bg[0], st.bg[1], st.bg[2]);
+    s.bg.lerp(s.tmp.color, Math.min(1, dt * (st.bgRate || 1.2)));
+    s.renderer.setClearColor(s.bg, 1);
+  }
+
+  function updateStageObjects(s, st, dt) {
+    const t = s.t, id = st.id, o = s.obj;
+    const fadeTo = (obj, target, rate = 1.5) => { obj.material.opacity = approach(obj.material.opacity, target, rate, dt); };
+
+    // Big Bang flare: glows in "origin", blows outward at the start of "inflation"
+    o.flare.material.opacity = id === 'origin' ? clamp01(t / 2) * (0.75 + 0.25 * Math.sin(t * 5))
+      : id === 'inflation' ? Math.max(0, 1 - t / 1.4) : 0;
+    o.flare.scale.setScalar(id === 'origin' ? 4 + t * 1.2 : id === 'inflation' ? 11 + t * 60 : 4);
+
+    // first stars ignite one after another
+    const starsOn = id === 'firstStars';
+    o.stars.forEach((star, g) => {
+      const on = starsOn ? clamp01((t - 3 - g * 0.09) / 1.2) : 0;
+      fadeTo(star, on * (0.8 + 0.2 * Math.sin(t * 3 + g)), starsOn ? 3 : 1.2);
+      star.scale.setScalar(3.5 + 2 * on);
+    });
+
+    // Sun and planets
+    const solar = id === 'solarSystem';
+    fadeTo(o.sunGlow, solar ? clamp01(t / 3) : 0);
+    fadeTo(o.sunCore, solar ? clamp01(t / 3) : 0);
+    o.sunGlow.scale.setScalar(14 + Math.sin(t * 2) * 0.6);
+    o.sunLight.intensity = approach(o.sunLight.intensity, solar ? 2.2 : 0, 2, dt);
+    o.planets.forEach((planet, q) => {
+      const grow = solar ? clamp01((t - 3 - q * 0.6) / 2.5) : 0;            // accretion: inner planets first
+      fadeTo(planet, grow, 2);
+      planet.scale.setScalar(0.2 + 0.8 * grow);
+      const { radius, phase } = planet.userData, a = phase + KEPLER / Math.pow(radius, 1.5) * t;
+      planet.position.set(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+    });
+
+    // Earth
+    const life = id === 'life';
+    fadeTo(o.earth, life ? clamp01(t / 3) : 0);
+    fadeTo(o.atmosphere, life ? Math.min(0.85, t / 3) : 0);
+    o.earth.rotation.y += dt * 0.12;
+    o.keyLight.intensity = approach(o.keyLight.intensity, life ? 1.3 : 0, 2, dt);
+  }
+
+  function updateCamera(s, st, dt) {
+    const { camera, controls, tmp } = s, cam = st.cam;
+    tmp.target.set(cam.tx || 0, 0, 0);
+    s.focus.lerp(tmp.target, Math.min(1, dt * 0.8));
+    controls.target.copy(s.focus);
+    if (!s.userCam) {                                          // drift toward the stage framing
+      const k = Math.min(1, dt * 0.7);
+      tmp.sph.setFromVector3(tmp.offset.copy(camera.position).sub(s.focus));
+      tmp.sph.radius += (cam.r - tmp.sph.radius) * k;
+      tmp.sph.phi += (Math.PI / 2 - THREE.MathUtils.degToRad(cam.el) - tmp.sph.phi) * k;
+      camera.position.copy(s.focus).add(tmp.offset.setFromSpherical(tmp.sph));
+    }
+    controls.update();
+    // keep points legible when the camera pulls far back for the large-scale stages
+    s.pointsMat.size = st.growPoints ? Math.min(1.2, 0.34 + camera.position.distanceTo(s.focus) * 0.009) : POINT_SIZE;
+  }
+
+  function updateHud(s, st) {
+    const u = clamp01(s.t / st.dur);
+    s.ui.ticks.forEach((bar, i) => { bar.style.width = (i < s.k ? 100 : i > s.k ? 0 : 100 * u) + '%'; });
+    const clock = fmtAge(stageAge(st, u));
+    if (clock !== s.ui.lastClock) { s.ui.clock.textContent = clock; s.ui.lastClock = clock; }
+  }
+
+  return { open, close, isOpen: () => S !== null };
 })();
