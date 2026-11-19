@@ -76,6 +76,7 @@ function renderHome() {
   <footer class="border-t border-[var(--line)]"><div class="wrap py-8 text-[13px] text-[var(--muted)] flex flex-wrap gap-x-6 gap-y-2">
     <span>ค่าคงที่อ้างอิง CODATA 2022 (NIST)</span><span>เนื้อหาตรวจทานกับกฎและทฤษฎีฟิสิกส์มาตรฐาน</span><span>ใช้งานได้ดีที่สุดบนคอมพิวเตอร์หรือแท็บเล็ต</span></div></footer>`;
   const btn = $('#heroAtom');
+  btn.addEventListener('click', () => Cosmos.primeAudio());   // create the AudioContext inside the click (Safari)
   if (window.THREE) {
     // stop the small atom's render loop before the full-screen journey starts (one WebGL loop at a time)
     try { currentSim = createHeroAtom(btn, () => { stopSim(); Cosmos.open(); }); }
