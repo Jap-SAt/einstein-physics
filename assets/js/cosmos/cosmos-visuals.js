@@ -21,7 +21,7 @@ const CosmosVisuals = (() => {
 
   /* camera keyframes per era: from → to across the era's progress */
   const CAMERA = {
-    inflation:   { from: { pos: [0, 1.5, 9],  target: [0, 0, 0], fov: 45 }, to: { pos: [0, 8, 62],  target: [0, 0, 0], fov: 55 } },
+    inflation:   { from: { pos: [0, 1.5, 9],  target: [0, 0, 0], fov: 45 }, to: { pos: [0, 3, 14],  target: [0, 0, 0], fov: 60 } },
     electroweak: { from: { pos: [0, 8, 62],   target: [0, 0, 0], fov: 55 }, to: { pos: [12, 9, 60], target: [0, 0, 0], fov: 55 } },
     quark:       { from: { pos: [0, 4, 40],   target: [0, 0, 0], fov: 55 }, to: { pos: [-6, 6, 26], target: [0, 0, 0], fov: 50 } },
     nucleo:      { from: { pos: [-6, 6, 28],  target: [0, 0, 0], fov: 50 }, to: { pos: [8, 5, 34],  target: [0, 0, 0], fov: 50 } },
@@ -40,10 +40,10 @@ const CosmosVisuals = (() => {
     vec3 hash3(float n) { return fract(sin(vec3(n, n + 1.7, n + 3.1)) * vec3(43758.5453, 22578.1459, 19642.3490)); }
     void eraLayout(float era, float p, float scl, out vec3 pos, out vec3 col, out float size) {
       vec3 d = dirOf(aSeed); float rr = pow(aSeed.z, 0.3333);
-      if (era < 0.5) {                                   // Planck & inflation: a point, then exponential expansion
-        float g = pow(smoothstep(0.6, 1.0, p), 2.5);
-        pos = d * rr * mix(0.25, 70.0, g);
-        col = mix(vec3(1.0, 0.97, 0.9), vec3(0.75, 0.88, 1.0), g) * mix(1.6, 0.9, g); size = mix(0.6, 1.0, g);
+      if (era < 0.5) {                                   // Planck & inflation: the camera sits INSIDE the hot patch (no centre),
+        float g = pow(smoothstep(0.6, 1.0, p), 2.5);     // then space itself stretches exponentially around it
+        pos = d * rr * mix(14.0, 70.0, g);
+        col = mix(vec3(1.0, 0.97, 0.9), vec3(0.75, 0.88, 1.0), g) * mix(0.045, 0.9, g); size = mix(0.6, 1.0, g);
       } else if (era < 1.5) {                            // hot era after reheating
         pos = d * rr * (70.0 + 10.0 * p) + 2.0 * vec3(sin(p * 6.0 + aSeed2.x * 20.0), sin(p * 5.0 + aSeed2.y * 20.0), sin(p * 7.0 + aSeed2.z * 20.0));
         col = vec3(1.0, 0.82, 0.55) * 0.5; size = 1.0;
@@ -273,8 +273,8 @@ const CosmosVisuals = (() => {
         bloom.strength = lerp(eraA.grade.bloom, eraB.grade.bloom, b.mix);
         // core glow lives only in the first era, before inflation blows it apart
         const coreOn = b.iB === 0 ? 1 - smooth((b.pB - 0.6) / 0.2) : 0;
-        core.material.opacity = coreOn;
-        core.scale.setScalar(lerp(5, 14, b.iB === 0 ? smooth(b.pB / 0.6) : 1));
+        core.material.opacity = 0.18 * coreOn;                 // a glow, not a disc: bloom carries the rest
+        core.scale.setScalar(lerp(34, 60, b.iB === 0 ? smooth(b.pB / 0.6) : 1));   // wider than the frame: a glow everywhere, not a ball
         for (const layer of layers) layer.update(state, d);
         applyCamera();
         composer.render(d);

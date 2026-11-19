@@ -86,7 +86,7 @@ const CosmosLayers = (() => {
           set3(op, T[0] + (C[0] - T[0]) * f, T[1] + (C[1] - T[1]) * f, T[2] + (C[2] - T[2]) * f);
           if (proton) set3(oc, 1.0, 0.42, 0.26); else set3(oc, 0.75, 0.77, 0.85);
           if (e === ERA.recomb) {                                     // neutral atoms dim into the dark ages
-            const g = smooth((p - 0.03) / 0.09), fade = 1 - smooth((p - 0.3) / 0.2);
+            const g = smooth((p - 0.03) / 0.09), fade = 1 - 0.75 * smooth((p - 0.3) / 0.2);   // dark ages: neutral gas stays, faintly
             set3(oc, (oc[0] * (1 - g) + 0.8 * g) * fade, (oc[1] * (1 - g) + 0.78 * g) * fade, (oc[2] * (1 - g) + 0.7 * g) * fade);
           }
         } else if (i >= QUARKS && i < QUARKS + GLUONS) {              // photons
@@ -104,7 +104,7 @@ const CosmosLayers = (() => {
             const g = smooth((p - 0.03) / 0.09), a = p * 200 + j, R = 0.9;
             set3(op, op[0] + (C[0] + R * Math.cos(a) - op[0]) * g, op[1] + (C[1] + 0.5 * R * Math.sin(a) - op[1]) * g, op[2] + (C[2] + R * Math.sin(a) - op[2]) * g);
           }
-          const fade = e === ERA.recomb ? 1 - smooth((p - 0.3) / 0.2) : 1;
+          const fade = e === ERA.recomb ? 1 - 0.75 * smooth((p - 0.3) / 0.2) : 1;
           set3(oc, 0.35 * fade, 0.55 * fade, 1.0 * fade);
         }
       }
@@ -161,8 +161,7 @@ const CosmosLayers = (() => {
           for (let i = QUARKS; i < QUARKS + GLUONS; i += 23) if (state.blend.pB < 0.5) pick(i, 'g กลูออน');
           for (let i = QUARKS + GLUONS; i < HERO; i += 29) pick(i, 'e⁻');
         } else if (eB === ERA.nucleo || eB === ERA.radiation) {
-          for (let i = 0; i < HE_NUCLEI * 4; i += 4) pick(i, '⁴He');
-          for (let i = HE_NUCLEI * 4; i < NUCLEONS; i += 13) pick(i, 'p⁺ (¹H)');
+          for (let k = 0; k < HE_NUCLEI; k += 2) { pick(HE_NUCLEI * 4 + k * 11, 'p⁺ (¹H)'); pick(HE_NUCLEI * 4 + k * 11 + 5, 'p⁺ (¹H)'); pick(k * 4, '⁴He'); }
           if (eB === ERA.radiation) for (let i = QUARKS; i < QUARKS + GLUONS; i += 25) pick(i, 'γ โฟตอน');
         } else if (eB === ERA.recomb && state.blend.pB < 0.3) {
           for (let i = HE_NUCLEI * 4; i < NUCLEONS; i += 13) pick(i, 'อะตอม H');
