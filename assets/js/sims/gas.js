@@ -19,7 +19,8 @@ function simGas(host, U) {
       pos[i * 3] = (rnd() - 0.5) * (L - 0.4); pos[i * 3 + 1] = 0.2 + rnd() * (st.H - 0.4); pos[i * 3 + 2] = (rnd() - 0.5) * (L - 0.4);
       vel[i * 3] = gauss() * s; vel[i * 3 + 1] = gauss() * s; vel[i * 3 + 2] = gauss() * s;
     }
-    Pm = 0;
+    measure();
+    Pm = st.N * (st.M / 28) * v2 / 3 / (L * L * st.H);   // start the running average at the theory value
   }
   const dark = isDark();
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshStandardMaterial({ roughness: 0.4 }), MAXN);

@@ -73,7 +73,12 @@ function simAtom(host, U) {
       });
     }
   }
-  function resetAtom() { st.ion = false; st.out = 0; st.n = 1; st.r = R(1); st.busy = false; elec.visible = true; hlRing(); showLevel(); setBtns(); }
+  function resetAtom() {
+    anims.length = 0;                                  // cancel pending jumps / ionisation fly-away
+    photons.forEach(killPhoton); photons.length = 0;   // in-flight photons (and their onArrive) go too
+    st.ion = false; st.out = 0; st.n = 1; st.r = R(1); st.busy = false;
+    elec.visible = true; hlRing(); showLevel(); setBtns();
+  }
 
   // ── panel
   U.head('อะตอมไฮโดรเจนตามแบบจำลองโบร์', 'คลิกระดับพลังงานเพื่อให้อิเล็กตรอนเปลี่ยนระดับ');

@@ -5,7 +5,9 @@
 function simRipple(host, U) {
   const { world, camera, renderer } = host;
   host.setHome(new THREE.Vector3(0, 30, 30), new THREE.Vector3(0, 0, 0));
-  const SIZE = 44, SEG = 200, V = 6;
+  // the height field is computed on the CPU every frame: use a lighter mesh on phones/tablets
+  const lowPower = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || innerWidth < 900;
+  const SIZE = 44, SEG = lowPower ? 120 : 200, V = 6;
   const st = { lam: 4, d: 10, phi: 0, A: 1, two: true, lines: true, play: true, t: 0, probe: new THREE.Vector3(8, 0, 12) };
   const dark = isDark();
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG); geo.rotateX(-Math.PI / 2);

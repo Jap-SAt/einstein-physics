@@ -81,39 +81,3 @@ function makeUI(panel) {
     }
   };
 }
-
-function renderSim(tv, m) {
-  tv.innerHTML = `<div class="sim-wrap" id="simwrap">
-    <div class="sim-stage" id="stage">
-      <div class="sim-tools">
-        <button class="tool" id="tPlay"><span id="tPlayI">❚❚</span><span id="tPlayL">หยุด</span></button>
-        <button class="tool" id="tReset">↺ มุมมองเริ่มต้น</button>
-      </div>
-      <div class="zoomtag mono"></div>
-      <div class="sim-hint">ลาก: หมุน · ล้อเมาส์ / สองนิ้ว: ซูม · คลิกขวาลาก: เลื่อน</div>
-    </div>
-    <aside class="sim-panel" id="panel"></aside></div>`;
-  const wrap = $('#simwrap'), stage = $('#stage'), panel = $('#panel');
-  const fit = () => { if (innerWidth > 900) wrap.style.height = Math.max(540, innerHeight - wrap.getBoundingClientRect().top - scrollY) + 'px'; else wrap.style.height = ''; };
-  fit(); window.addEventListener('resize', fit);
-  let host;
-  try {
-    if (!window.THREE || !THREE.OrbitControls) throw new Error('three');
-    host = makeHost(stage);
-  } catch (e) {
-    stage.insertAdjacentHTML('beforeend', '<div class="nogl">เบราว์เซอร์นี้แสดงกราฟิก 3 มิติ (WebGL) ไม่ได้<br>ลองเปิดด้วย Chrome, Edge หรือ Safari รุ่นล่าสุด</div>');
-    return;
-  }
-  const U = makeUI(panel);
-  const SIMS = { particle: simParticle, em: simEM, atom: simAtom, nuclear: simNuclear };
-  const sim = SIMS[m.id](host, U);
-  U.group('มุมมองและขนาด');
-  U.slider({ label: 'ขนาดวัตถุ (scale)', min: 0.25, max: 4, step: 0.05, value: 1, fmt: x => '×' + x.toFixed(2) }, x => host.world.scale.setScalar(x));
-  U.note('ซูมได้อิสระด้วยล้อเมาส์หรือสองนิ้ว ส่วนแถบ scale ขยายวัตถุทั้งฉากโดยไม่เปลี่ยนมุมกล้อง');
-  const setPlayUI = p => { $('#tPlayI').textContent = p ? '❚❚' : '▶'; $('#tPlayL').textContent = p ? 'หยุด' : 'เล่น'; };
-  $('#tPlay').onclick = () => setPlayUI(sim.toggle());
-  $('#tReset').onclick = () => host.resetView();
-  sim.onPlayChange = setPlayUI;
-  currentSim = { dispose() { window.removeEventListener('resize', fit); host.dispose(); } };
-  typeset(panel);
-}

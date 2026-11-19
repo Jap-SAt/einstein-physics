@@ -37,6 +37,7 @@ function createHeroAtom(btn, onActivate) {
   });
 
   let hover = false, spin = 1, scale = 1, collapse = -1, raf = 0, last = performance.now();
+  let activatePending = false, resetTimer = 0;
   const onEnter = () => hover = true, onLeave = () => hover = false;
   const onClick = () => { if (collapse < 0) collapse = 0; };
   btn.addEventListener('mouseenter', onEnter); btn.addEventListener('mouseleave', onLeave);
@@ -59,7 +60,7 @@ function createHeroAtom(btn, onActivate) {
       spin = 3 + 14 * u;
       pMat.emissiveIntensity = nMat.emissiveIntensity = 2.2 * u;
       nucleus.scale.setScalar(1 + 0.9 * u);
-      if (u >= 1 && collapse < 10) { collapse = 10; onActivate && onActivate(); setTimeout(reset, 900); }
+      if (u >= 1 && collapse < 10) { collapse = 10; activatePending = true; }
     }
     orbits.forEach(o => {
       o.phase += dt * o.speed * spin;
@@ -70,13 +71,18 @@ function createHeroAtom(btn, onActivate) {
     if (collapse < 0) nucleus.scale.setScalar(1 + 0.03 * Math.sin(now / 400));
     atom.scale.setScalar(scale);
     renderer.render(scene, cam);
+    if (activatePending) {                       // run after rendering: onActivate may dispose this atom
+      activatePending = false;
+      resetTimer = setTimeout(reset, 900);
+      if (onActivate) onActivate();
+    }
   }
   function reset() { collapse = -1; spin = 1; pMat.emissiveIntensity = nMat.emissiveIntensity = 0; nucleus.scale.setScalar(1); }
   raf = requestAnimationFrame(loop);
 
   return {
     dispose() {
-      cancelAnimationFrame(raf); ro.disconnect();
+      cancelAnimationFrame(raf); clearTimeout(resetTimer); ro.disconnect();
       btn.removeEventListener('mouseenter', onEnter); btn.removeEventListener('mouseleave', onLeave);
       btn.removeEventListener('focus', onEnter); btn.removeEventListener('blur', onLeave);
       btn.removeEventListener('click', onClick);

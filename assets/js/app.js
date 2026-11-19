@@ -21,6 +21,7 @@ window.addEventListener('themechange', () => {
 
 function route(keepScroll) {
   stopSim();
+  if (lecObs) { lecObs.disconnect(); lecObs = null; }
   const h = location.hash.slice(1);
   const [id, tab] = h.split('-');
   const m = MODS.find(x => x.id === id);
@@ -39,7 +40,8 @@ window.addEventListener('hashchange', () => route());
 function renderHome() {
   const pick = m => {
     const b = store.get('best_' + m.id, null);
-    const badge = b ? `<span class="badge mono">${b.s}/${b.n}</span>` : `<span class="badge">ยังไม่เริ่ม</span>`;
+    const valid = b && Number.isInteger(b.s) && Number.isInteger(b.n) && b.n > 0;   // localStorage may hold anything
+    const badge = valid ? `<span class="badge mono">${b.s}/${b.n}</span>` : `<span class="badge">ยังไม่เริ่ม</span>`;
     return `<a class="pick compact" href="#${m.id}">
       <span class="ic" style="background:${m.soft};color:${m.acc}">${ICONS[m.id]}</span>
       <span class="flex-1 min-w-0"><span class="t block truncate">${m.title}<span class="en">${m.en}</span></span><span class="s block truncate">${m.sub}</span></span>
@@ -75,7 +77,8 @@ function renderHome() {
     <span>ค่าคงที่อ้างอิง CODATA 2022 (NIST)</span><span>เนื้อหาตรวจทานกับกฎและทฤษฎีฟิสิกส์มาตรฐาน</span><span>ใช้งานได้ดีที่สุดบนคอมพิวเตอร์หรือแท็บเล็ต</span></div></footer>`;
   const btn = $('#heroAtom');
   if (window.THREE) {
-    try { currentSim = createHeroAtom(btn, () => Cosmos.open()); }
+    // stop the small atom's render loop before the full-screen journey starts (one WebGL loop at a time)
+    try { currentSim = createHeroAtom(btn, () => { stopSim(); Cosmos.open(); }); }
     catch (e) { btn.onclick = () => Cosmos.open(); }
   }
 }
@@ -191,17 +194,26 @@ function renderSim(tv, m) {
     <aside class="sim-panel" id="panel"></aside></div>`;
   const wrap = $('#simwrap'), stage = $('#stage'), panel = $('#panel');
   const fit = () => { if (innerWidth > 900) wrap.style.height = Math.max(540, innerHeight - wrap.getBoundingClientRect().top - scrollY) + 'px'; else wrap.style.height = ''; };
-  fit(); window.addEventListener('resize', fit);
+  const showError = msg => stage.insertAdjacentHTML('beforeend', `<div class="nogl">${msg}</div>`);
+  fit();
   let host;
   try {
     if (!window.THREE || !THREE.OrbitControls) throw new Error('three');
     host = makeHost(stage);
   } catch (e) {
-    stage.insertAdjacentHTML('beforeend', '<div class="nogl">เบราว์เซอร์นี้แสดงกราฟิก 3 มิติ (WebGL) ไม่ได้<br>ลองเปิดด้วย Chrome, Edge หรือ Safari รุ่นล่าสุด</div>');
+    showError('เบราว์เซอร์นี้แสดงกราฟิก 3 มิติ (WebGL) ไม่ได้<br>ลองเปิดด้วย Chrome, Edge หรือ Safari รุ่นล่าสุด');
     return;
   }
+  window.addEventListener('resize', fit);        // only once the page really owns a 3D view
+  currentSim = { dispose() { window.removeEventListener('resize', fit); host.dispose(); } };
   const U = makeUI(panel);
-  const sim = SIMS[m.id]()(host, U);
+  let sim;
+  try { sim = SIMS[m.id]()(host, U); }
+  catch (e) {                                    // a broken sim must not leave its render loop running
+    console.error(e); stopSim();
+    showError('การจำลองนี้โหลดไม่สำเร็จ ลองรีเฟรชหน้าอีกครั้ง');
+    return;
+  }
   U.group('มุมมองและขนาด');
   U.slider({ label: 'ขนาดวัตถุ (scale)', min: 0.25, max: 4, step: 0.05, value: 1, fmt: x => '×' + x.toFixed(2) }, x => host.world.scale.setScalar(x));
   U.note('ซูมได้อิสระด้วยล้อเมาส์หรือสองนิ้ว ส่วนแถบ scale ขยายวัตถุทั้งฉากโดยไม่เปลี่ยนมุมกล้อง');

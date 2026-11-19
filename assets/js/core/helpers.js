@@ -25,8 +25,8 @@ function si(x, unit, d = 3) {
   for (const [v, p] of P) if (Math.abs(x) >= v * 0.9995) return (x / v).toPrecision(d) + ' ' + p + unit;
   return sci(x) + ' ' + unit;
 }
-const sgn = x => (x >= 0 ? '+' : '−') + Math.abs(x);
-function fx(x, d) { const s = x.toFixed(d); return (x < 0 ? '−' + s.slice(1) : ' ' + s); }
+/* fixed-width signed number with a real minus sign; rounds first so −0.0001 shows as " 0.000", not "−0.000" */
+function fx(x, d) { const v = Number(x.toFixed(d)); return (v < 0 ? '−' : ' ') + Math.abs(v).toFixed(d); }
 function wl2rgb(nm) {
   if (nm < 380 || nm > 750) return null;
   let r = 0, g = 0, b = 0;
