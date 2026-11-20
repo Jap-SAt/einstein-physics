@@ -53,6 +53,8 @@ var PracticeCore = (function () {
     if (rest !== '' && !/^(?:\s|[A-Za-z°µμ%Ω]|[฀-๿])/.test(rest)) return null;
     /* any other number followed by a space and more digits (“10 98”, “2.5 3”) is unreadable, never a partial number */
     if (/^\s+[\d.]/.test(rest)) return null;
+    /* after a symbol unit (“71.6°”, “56%”, “2.3 µT”) no digit or dot may follow (“71.6°5”, “5%3” are unreadable) */
+    if (/^\s*[°µμ%Ω]/.test(rest) && /[\d.]/.test(rest)) return null;
     /* a half-written power of ten (“2.4 x 10-13”, “2.4 × 10^”, “2.4e(-13)”) is unreadable, never the bare 2.4 */
     if (/^\s*[×x*]/i.test(rest) || /^e\s*[-+({\d]/i.test(rest)) return null;
     var v = Number(m[0]);
