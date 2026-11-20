@@ -87,7 +87,7 @@ var PracticeCore = (function () {
 
   function classify(r) {
     if (!r.correct || r.skipped || r.sawSolution) return 'wrong';
-    return ((r.tries || 1) > 1 || r.usedHint) ? 'ok-help' : 'ok';
+    return ((r.tries || 1) > 2 || r.usedHint) ? 'ok-help' : 'ok';
   }
 
   function readRecord(raw) {

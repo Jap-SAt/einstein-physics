@@ -44,6 +44,7 @@ test('check tolerance', () => {
 
 test('classify rules', () => {
   assert.equal(PC.classify({ correct: true, tries: 1 }), 'ok');
+  assert.equal(PC.classify({ correct: true, tries: 2 }), 'ok');
   assert.equal(PC.classify({ correct: true, tries: 3 }), 'ok-help');
   assert.equal(PC.classify({ correct: true, usedHint: true, tries: 1 }), 'ok-help');
   assert.equal(PC.classify({ correct: true, sawSolution: true }), 'wrong');
