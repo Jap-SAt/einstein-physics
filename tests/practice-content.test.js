@@ -57,6 +57,36 @@ function itemTexts(it, vars) {
   return out;
 }
 
+// MathJax delimiters must pair up and never nest: "\( a \( b \) \)" breaks rendering. This happens when
+// PracticeCore.fmt(x) (which wraps |x| >= 1e5 in \(...\)) is interpolated inside a math span.
+// Returns null when fine, otherwise a short description of the first problem.
+function mathSpanProblem(s) {
+  const CLOSE = { '(': ')', '[': ']' };
+  let open = null;
+  for (let i = 0; i < s.length - 1; i++) {
+    if (s[i] !== '\\') continue;
+    const c = s[i + 1];
+    if (c === '\\') { i++; continue; }               // TeX "\\" (line break), not a delimiter
+    if (c === '(' || c === '[') {
+      if (open) return `\\${c} opened inside \\${open} at ${i}`;
+      open = c; i++;
+    } else if (c === ')' || c === ']') {
+      if (!open) return `\\${c} without an open span at ${i}`;
+      if (CLOSE[open] !== c) return `\\${open} closed by \\${c} at ${i}`;
+      open = null; i++;
+    }
+  }
+  return open ? `\\${open} never closed` : null;
+}
+
+test('math span checker flags nested and unbalanced spans', () => {
+  for (const ok of ['', 'no math', String.raw`\(a\) and \(b = \dfrac{1}{2}\)`, String.raw`\[x\] then \(y \\ z\)`])
+    assert.equal(mathSpanProblem(ok), null, ok);
+  for (const bad of [String.raw`\(Q = \(1.5 \times 10^{5}\)\ \text{J}\)`, String.raw`\(a`, String.raw`b\)`,
+    String.raw`\(a\]`, String.raw`\[a \(b\) \]`])
+    assert.notEqual(mathSpanProblem(bad), null, bad);
+});
+
 test('at least one chapter has practice data', () => {
   assert.ok(chapters.length >= 1, `no files in ${DATA_DIR}`);
 });
@@ -198,6 +228,24 @@ for (const id of chapters) {
     for (const it of L(3)) {
       assert.equal(typeof ref[it.id], 'number', `${it.id}: reference missing`);
       assert.ok(relDiff(it.answer, ref[it.id]) <= REF_TOL, `${it.id}: ${it.answer} vs ref ${ref[it.id]}`);
+    }
+  });
+
+  test(`${id}: math spans balanced and not nested`, () => {
+    const check = (it, vars, tag) => {
+      for (const s of itemTexts(it, vars)) {   // L1: q, e, options t/why · L2/L3: q, solution, hints, mistake msgs
+        if (typeof s !== 'string') continue;
+        const p = mathSpanProblem(s);
+        assert.equal(p, null, `${tag}: ${p} in ${JSON.stringify(s.slice(0, 160))}`);
+      }
+    };
+    for (const it of items) {
+      if (it.level === 2) {
+        const rng = PC.makeRng(1234);
+        for (let i = 0; i < DRAWS; i++) { const vars = it.gen(rng); check(it, vars, `${it.id} vars=${JSON.stringify(vars)}`); }
+      } else {
+        check(it, null, it.id);
+      }
     }
   });
 

@@ -1,4 +1,5 @@
 """Browser tests for PracticeUI (Task 3). Run: python3 tests/e2e/test_practice_ui.py [test_name ...]"""
+import os
 from harness import open_page, run_tests
 
 REC = "() => JSON.parse(localStorage.getItem('einstein_practice_mech') || 'null')"
@@ -376,6 +377,40 @@ async def test_worked_mobile_dark_reduced_motion():
         assert not s.errors, s.errors
     finally:
         await s.close()
+
+
+def practice_chapters():
+    d = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'js', 'data', 'practice')
+    return sorted(f[:-3] for f in os.listdir(d) if f.endswith('.js'))
+
+
+async def test_worked_all_open_fit_390():
+    """Every worked example of every chapter with practice data, fully opened, fits a 390 px phone (no sideways scroll)."""
+    for ch in practice_chapters():
+        s = await open_page(ch, viewport=(390, 844))
+        try:
+            await s.page.wait_for_selector('#lec .wx .wx-next')
+            n = await s.page.locator('#lec .wx').count()
+            for i in range(n):
+                wx = s.page.locator('#lec .wx').nth(i)
+                for _ in range(12):
+                    if not await wx.locator('.wx-next').count():
+                        break
+                    await wx.locator('.wx-next').click()
+                assert await wx.locator('.wx-next').count() == 0, (ch, i)
+            await s.page.evaluate("() => (window.MathJax && MathJax.startup && MathJax.startup.promise) || null")
+            await s.page.wait_for_timeout(500)
+            r = await s.page.evaluate("""() => {
+                const wide = [...document.querySelectorAll('#lec .wx mjx-container')]
+                    .filter(m => m.getBoundingClientRect().right > window.innerWidth + 0.5)
+                    .map(m => m.textContent.slice(0, 50));
+                return { sw: document.documentElement.scrollWidth, vw: window.innerWidth,
+                         hidden: document.querySelectorAll('#lec .wx-steps > li[hidden]').length, wide }; }""")
+            assert r['hidden'] == 0, (ch, r)
+            assert r['sw'] <= 390 and not r['wide'], (ch, r)
+            assert not s.errors, (ch, s.errors)
+        finally:
+            await s.close()
 
 
 run_tests(globals())
