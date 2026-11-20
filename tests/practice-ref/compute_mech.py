@@ -45,7 +45,7 @@ def push(m, mu, F):
     return (F - mu * normal) / m
 
 
-# mech-2-06: cart m1 at v1 hits cart m2 at rest, they stick -> common velocity
+# mech-2-06: cart m1 at v1 hits cart m2 at rest (m2 != m1), they stick -> common velocity
 def stick(m1, m2, v1):
     p = m1 * v1
     return p / (m1 + m2)
@@ -61,9 +61,9 @@ L2 = {
     'mech-2-01': (walk, [dict(a=60, b=80), dict(a=150, b=40), dict(a=200, b=200)]),
     'mech-2-02': (braking, [dict(V=36, a=5), dict(V=72, a=6.5), dict(V=108, a=8)]),
     'mech-2-03': (slide, [dict(m=30, h=5), dict(m=45, h=2.5), dict(m=60, h=12)]),
-    'mech-2-04': (max_height, [dict(u=20, th=30), dict(u=12, th=65), dict(u=27, th=40)]),
+    'mech-2-04': (max_height, [dict(u=20, th=25), dict(u=12, th=65), dict(u=27, th=40)]),
     'mech-2-05': (push, [dict(m=20, mu=0.3, F=100), dict(m=10, mu=0.25, F=35), dict(m=30, mu=0.4, F=180)]),
-    'mech-2-06': (stick, [dict(m1=2, m2=1, v1=3), dict(m1=0.5, m2=2.5, v1=1.2), dict(m1=1.5, m2=1.5, v1=4)]),
+    'mech-2-06': (stick, [dict(m1=2, m2=1, v1=3), dict(m1=0.5, m2=2.5, v1=1.2), dict(m1=1.5, m2=1, v1=4)]),
     'mech-2-07': (curve, [dict(m=1200, V=54, r=100), dict(m=1000, V=36, r=200), dict(m=1800, V=72, r=80)]),
 }
 

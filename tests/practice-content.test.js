@@ -38,6 +38,12 @@ function lectureTopics(id) {
 const relDiff = (x, ref) => Math.abs(x - ref) / Math.abs(ref);
 const str = (v, vars) => (typeof v === 'function' ? v(vars) : v);
 
+// Typing a mistake's value must show that mistake's own message (not an earlier one that collides).
+function assertDiagnosis(PC, mk, answer, tol, mistakes, tag) {
+  const shown = PC.checkNumeric(mk.value, answer, tol, mistakes).msg;
+  assert.equal(shown, mk.msg, `${tag}: typing ${mk.value} shows another mistake's message`);
+}
+
 function itemTexts(it, vars) {
   const out = [];
   if (it.level === 1) {
@@ -129,10 +135,11 @@ for (const id of chapters) {
         assert.doesNotMatch(q, BAD_TEXT, `${tag}: q`);
         assert.doesNotMatch(sol, BAD_TEXT, `${tag}: solution`);
         for (const h of it.hints) assert.doesNotMatch(str(h, vars), BAD_TEXT, `${tag}: hint`);
-        for (const mk of it.mistakes) {
-          const v = mk.value(vars);
-          assert.ok(Number.isFinite(v), `${tag}: mistake not finite`);
-          assert.ok(relDiff(v, a) > 2 * tol, `${tag}: mistake ${v} too close to ${a} (${mk.msg})`);
+        const resolved = it.mistakes.map(mk => ({ value: mk.value(vars), msg: mk.msg }));
+        for (const mk of resolved) {
+          assert.ok(Number.isFinite(mk.value), `${tag}: mistake not finite`);
+          assert.ok(relDiff(mk.value, a) > 2 * tol, `${tag}: mistake ${mk.value} too close to ${a} (${mk.msg})`);
+          assertDiagnosis(PC, mk, a, tol, resolved, tag);
         }
       }
     }
@@ -171,6 +178,7 @@ for (const id of chapters) {
       for (const mk of it.mistakes) {
         assert.ok(Number.isFinite(mk.value), `${it.id}: mistake value`);
         assert.ok(relDiff(mk.value, it.answer) > 2 * tol, `${it.id}: mistake ${mk.value} too close (${mk.msg})`);
+        assertDiagnosis(PC, mk, it.answer, tol, it.mistakes, it.id);
       }
     }
   });
