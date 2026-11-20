@@ -41,12 +41,16 @@ var PracticeCore = (function () {
     s = s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+/g, function (m) {
       return '^' + m.split('').map(function (c) { return SUP[c]; }).join('');
     });
-    s = s.replace(/\s*[×x*]\s*10\s*\^\s*/gi, 'e');
+    /* × 10^(-13) and × 10^{-13} first, then the bare × 10^-13 */
+    s = s.replace(/\s*[×x*]\s*10\s*\^\s*[({]\s*([-+]?\d+)\s*[)}]/gi, 'e$1');
+    s = s.replace(/\s*[×x*]\s*10\s*\^\s*(?=[-+]?\d)/gi, 'e');
     s = s.replace(/^([-+]?\d{1,3}(?:,\d{3})+)(?!\d)/, function (m) { return m.replace(/,/g, ''); });
     var m = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/i.exec(s);
     if (!m) return null;
     var rest = s.slice(m[0].length);
     if (rest !== '' && !/^(?:\s|[A-Za-z]|[฀-๿])/.test(rest)) return null;
+    /* a half-written power of ten (“2.4 x 10-13”, “2.4 × 10^”, “2.4e(-13)”) is unreadable, never the bare 2.4 */
+    if (/^\s*[×x*]/i.test(rest) || /^e\s*[-+({\d]/i.test(rest)) return null;
     var v = Number(m[0]);
     return isFinite(v) ? v : null;
   }

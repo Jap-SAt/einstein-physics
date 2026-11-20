@@ -30,6 +30,17 @@ test('parse formats', () => {
   for (const s of ['abc', '', '1.2.3']) assert.equal(PC.parseAnswer(s), null);
 });
 
+test('parse powers of ten written with parentheses', () => {
+  for (const s of ['2.4 x 10^(-13)', '2.4*10^(-13)', '2.4×10^(−13)', '2.4 × 10^( -13 )', '2.4x10^{-13}', '2.4 X 10^(-13) N'])
+    near(PC.parseAnswer(s), 2.4e-13, 1e-25);
+  near(PC.parseAnswer('3×10^(8)'), 3e8, 1e-4);
+});
+
+test('parse rejects a half-written power of ten instead of returning the mantissa', () => {
+  for (const s of ['2.4 x 10-13', '2.4×10-13', '2.4*10 -13', '2.4 x 10', '2.4 × 10^', '2.4x10^(-13', '2.4 x 10^(abc)', '2.4 *', '2.4e(-13)', '2.4 × 1.0'])
+    assert.equal(PC.parseAnswer(s), null, s);
+});
+
 test('parse strips trailing unit text', () => {
   for (const s of ['7.35 m', '7.35 เมตร', '7.35m/s']) assert.equal(PC.parseAnswer(s), 7.35);
 });
