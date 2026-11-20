@@ -43,6 +43,21 @@ test('parse rejects a half-written power of ten instead of returning the mantiss
 
 test('parse strips trailing unit text', () => {
   for (const s of ['7.35 m', '7.35 เมตร', '7.35m/s']) assert.equal(PC.parseAnswer(s), 7.35);
+  near(PC.parseAnswer('3 × 10^8 m/s'), 3e8, 1e-4);
+  for (const [s, v] of [['71.6°', 71.6], ['2.3µT', 2.3], ['2.3μT', 2.3], ['56%', 56], ['10Ω', 10]]) assert.equal(PC.parseAnswer(s), v, s);
+});
+
+test('parse joins thousands groups separated by single spaces', () => {
+  assert.equal(PC.parseAnswer('10 980'), 10980);
+  assert.equal(PC.parseAnswer('1 234 567.5'), 1234567.5);
+  assert.equal(PC.parseAnswer('-12 000'), -12000);
+  assert.equal(PC.parseAnswer('10 980 รอบ'), 10980);
+  assert.equal(PC.parseAnswer('1 234.5 m'), 1234.5);
+});
+
+test('parse rejects a number followed by a space and more digits instead of a partial number', () => {
+  for (const s of ['10 98', '2.5 3', '10  980', '1 2345', '12.5 000', '1 234 56', '10 980 5', '0 123'])
+    assert.equal(PC.parseAnswer(s), null, s);
 });
 
 test('check tolerance', () => {

@@ -183,9 +183,10 @@ for (const id of chapters) {
         assert.ok(it.solution(vars).includes(want), `${it.id} seed ${seed}: solution lacks ${want}`);
       }
     }
+    // L3 may state its answer to 3 or 4 significant figures (e.g. 10980 rather than 11000)
     for (const it of L(3)) {
-      const want = PC.fmt(it.answer);
-      assert.ok(it.solution.includes(want), `${it.id}: solution lacks ${want}`);
+      const want = [PC.fmt(it.answer), PC.fmt(it.answer, 4)];
+      assert.ok(want.some(w => it.solution.includes(w)), `${it.id}: solution lacks ${want.join(' / ')}`);
     }
   });
 

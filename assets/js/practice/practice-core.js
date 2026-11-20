@@ -45,10 +45,14 @@ var PracticeCore = (function () {
     s = s.replace(/\s*[×x*]\s*10\s*\^\s*[({]\s*([-+]?\d+)\s*[)}]/gi, 'e$1');
     s = s.replace(/\s*[×x*]\s*10\s*\^\s*(?=[-+]?\d)/gi, 'e');
     s = s.replace(/^([-+]?\d{1,3}(?:,\d{3})+)(?!\d)/, function (m) { return m.replace(/,/g, ''); });
+    /* thousands groups separated by single spaces (“10 980”, “1 234 567.5”) */
+    s = s.replace(/^([-+]?[1-9]\d{0,2}(?: \d{3})+)(?!\d)/, function (m) { return m.replace(/ /g, ''); });
     var m = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/i.exec(s);
     if (!m) return null;
     var rest = s.slice(m[0].length);
-    if (rest !== '' && !/^(?:\s|[A-Za-z]|[฀-๿])/.test(rest)) return null;
+    if (rest !== '' && !/^(?:\s|[A-Za-z°µμ%Ω]|[฀-๿])/.test(rest)) return null;
+    /* any other number followed by a space and more digits (“10 98”, “2.5 3”) is unreadable, never a partial number */
+    if (/^\s+[\d.]/.test(rest)) return null;
     /* a half-written power of ten (“2.4 x 10-13”, “2.4 × 10^”, “2.4e(-13)”) is unreadable, never the bare 2.4 */
     if (/^\s*[×x*]/i.test(rest) || /^e\s*[-+({\d]/i.test(rest)) return null;
     var v = Number(m[0]);
