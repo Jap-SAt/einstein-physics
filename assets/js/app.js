@@ -1,5 +1,5 @@
 /* ════════════════ router ════════════════
-   #home · #<id> (บทเรียน) · #<id>-sim (การจำลอง) · #<id>-quiz (แบบทดสอบ) */
+   #home · #<id> (บทเรียน) · #<id>-sim (การจำลอง) · #<id>-quiz (แบบฝึกหัด; ใช้ PracticeUI เมื่อบทนั้นมีชุดฝึก ไม่งั้นแบบทดสอบเดิม) */
 const view = $('#view');
 let currentSim = null;
 function stopSim() { if (currentSim) { try { currentSim.dispose(); } catch (e) {} currentSim = null; } }
@@ -39,9 +39,15 @@ window.addEventListener('hashchange', () => route());
 /* ════════════════ home ════════════════ */
 function renderHome() {
   const pick = m => {
-    const b = store.get('best_' + m.id, null);
-    const valid = b && Number.isInteger(b.s) && Number.isInteger(b.n) && b.n > 0;   // localStorage may hold anything
-    const badge = valid ? `<span class="badge mono">${b.s}/${b.n}</span>` : `<span class="badge">ยังไม่เริ่ม</span>`;
+    let badge;
+    if (hasPractice(m)) {
+      const t = PracticeUI.progressText(m.id);
+      badge = `<span class="badge${/^\d/.test(t) ? ' mono' : ''}">${t}</span>`;
+    } else {
+      const b = store.get('best_' + m.id, null);
+      const valid = b && Number.isInteger(b.s) && Number.isInteger(b.n) && b.n > 0;   // localStorage may hold anything
+      badge = valid ? `<span class="badge mono">${b.s}/${b.n}</span>` : `<span class="badge">ยังไม่เริ่ม</span>`;
+    }
     return `<a class="pick compact" href="#${m.id}">
       <span class="ic" style="background:${m.soft};color:${m.acc}">${ICONS[m.id]}</span>
       <span class="flex-1 min-w-0"><span class="t block truncate">${m.title}<span class="en">${m.en}</span></span><span class="s block truncate">${m.sub}</span></span>
@@ -85,8 +91,10 @@ function renderHome() {
 }
 
 /* ════════════════ module page ════════════════ */
+/* chapters migrate to the practice ladder one by one; the rest keep the old quiz */
+const hasPractice = m => typeof PracticeUI !== 'undefined' && typeof PRACTICE !== 'undefined' && !!PRACTICE[m.id] && PRACTICE[m.id].length > 0;
 function renderModule(m, tab) {
-  const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบทดสอบ', m.id + '-quiz']];
+  const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบฝึกหัด', m.id + '-quiz']];
   view.innerHTML = `
   <div class="modhead"><div class="wrap modhead-in">
     <div class="flex items-center gap-3 min-w-0 mr-auto">
@@ -99,6 +107,7 @@ function renderModule(m, tab) {
   const tv = $('#tabview');
   if (tab === 'learn') renderLecture(tv, m);
   else if (tab === 'sim') renderSim(tv, m);
+  else if (hasPractice(m)) PracticeUI.render(tv, m);
   else renderQuiz(tv, m);
 }
 
@@ -112,7 +121,9 @@ function renderLecture(tv, m) {
   art.appendChild(tpl.content.cloneNode(true));
   art.insertAdjacentHTML('beforeend', `<div class="nextcards">
      <a href="#${m.id}-sim"><b>ลองในการจำลอง 3D →</b><span>ปรับค่าเองแล้วสังเกตผล</span></a>
-     <a href="#${m.id}-quiz"><b>ทำแบบทดสอบ →</b><span>${QUIZ[m.id].length} ข้อ พร้อมเฉลยละเอียด</span></a></div>`);
+     ${hasPractice(m)
+        ? `<a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}</span></a>`
+        : `<a href="#${m.id}-quiz"><b>ทำแบบทดสอบ →</b><span>${QUIZ[m.id].length} ข้อ พร้อมเฉลยละเอียด</span></a>`}</div>`);
   const hs = [...art.querySelectorAll('h2')];
   $('#tocl').innerHTML = hs.map(h => `<a role="button" tabindex="0" data-t="${h.id}">${h.textContent.replace(/^\d+/, '')}</a>`).join('');
   $('#tocl').onclick = e => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.t).scrollIntoView({ behavior: 'smooth' }); };
