@@ -191,6 +191,14 @@ test('instantiate', () => {
   }
 });
 
+test('instantiate gives signed items the text keyboard on every draw (review finding 3)', () => {
+  const base = { id: 'z', level: 3, type: 'num', answer: 2.5 };
+  assert.equal(PC.instantiate(base, PC.makeRng(1)).inputMode, 'decimal');
+  assert.equal(PC.instantiate({ ...base, signed: true }, PC.makeRng(1)).inputMode, 'text');
+  assert.equal(PC.instantiate({ ...base, mistakes: [{ value: -2.5, msg: 'sign' }] }, PC.makeRng(1)).inputMode, 'text');
+  assert.equal(PC.instantiate({ ...base, mistakes: [{ value: () => -1, msg: 'sign' }] }, PC.makeRng(1)).inputMode, 'text');
+});
+
 test('instantiate resolves per-element hints and mistake values', () => {
   const item = {
     id: 'mech-2-02', level: 2, type: 'num', unit: 'm',

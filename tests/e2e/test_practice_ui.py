@@ -285,7 +285,30 @@ async def test_full_value_in_power_unit():
         await s.close()
 
 
-NO_HSCROLL ="() => document.documentElement.scrollWidth <= window.innerWidth"
+async def test_signed_item_keyboard():
+    """waves-2-07 (sign tells real/virtual image): the text keyboard with '−' and the helper on a positive draw too."""
+    s = await open_page('waves-quiz')
+    try:
+        await start_level(s, 2)
+        for _ in range(6):
+            await s.page.click('.px-solbtn')
+            await s.page.click('.px-next')
+        assert await s.page.evaluate("() => __px.current().id") == 'waves-2-07'
+        for _ in range(40):
+            if await s.page.evaluate("() => __px.current().answer > 0"):
+                break
+            await s.page.click('.px-solbtn')
+            await s.page.click('.px-newbtn')
+        assert await s.page.evaluate("() => __px.current().answer > 0"), 'no positive draw'
+        mode = await s.page.get_attribute('.px-in', 'inputmode')
+        assert mode == 'text', f'positive draw of waves-2-07 has inputmode={mode}'
+        assert 'พิมพ์แบบ 2.1e-2 ได้' in await s.page.inner_text('.px-item')
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+NO_HSCROLL = "() => document.documentElement.scrollWidth <= window.innerWidth"
 
 
 async def test_old_route_and_mobile():

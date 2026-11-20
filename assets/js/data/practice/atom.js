@@ -128,7 +128,7 @@
     e: String.raw`\(\lambda = \dfrac{h}{p}\): (ก) \(p\) เท่ากัน \(\lambda\) จึงเท่ากันไม่ว่ามวลต่างกันเท่าใด (ข) \(v\) เท่ากัน \(p = mv\) แปรผันตามมวล โปรตอนจึงมี \(p\) มากกว่า 1836 เท่า และ \(\lambda\) สั้นกว่า 1836 เท่า หรือพูดอีกแบบคือของอิเล็กตรอนยาวกว่า 1836 เท่า` },
 
   /* ─────────────── ระดับ 2 · คำนวณ (ตัวเลขสุ่ม) ─────────────── */
-  { id: 'atom-2-01', level: 2, type: 'num', topic: 's2', unit: 'eV', range: [-3.5, -0.35],
+  { id: 'atom-2-01', level: 2, type: 'num', signed: true, topic: 's2', unit: 'eV', range: [-3.5, -0.35],
     gen: function (rng) { var p = UP[pick(rng, 0, UP.length - 1, 1)]; return { ni: p[0], nf: p[1] }; },
     q: function (v) {
       return String.raw`อิเล็กตรอนในอะตอมไฮโดรเจนอยู่ที่ระดับ \(n\) = ` + n(v.ni) + ' แล้วดูดกลืนโฟตอนพลังงาน ' + n(dE(v.ni, v.nf).toFixed(2)) +
@@ -153,7 +153,7 @@
       ], En(v.nf), 'eV');
     } },
 
-  { id: 'atom-2-02', level: 2, type: 'num', topic: 's2', unit: 'eV', range: [0.35, 3.5],
+  { id: 'atom-2-02', level: 2, type: 'num', signed: true, topic: 's2', unit: 'eV', range: [0.35, 3.5],
     gen: function (rng) { return { k: pick(rng, 2, 6, 1) }; },
     q: function (v) {
       return 'ตามแบบจำลองของโบร์ อิเล็กตรอนในอะตอมไฮโดรเจนวิ่งอยู่ในวงรัศมี ' + n((A0 * v.k * v.k).toPrecision(3)) +

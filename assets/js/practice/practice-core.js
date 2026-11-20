@@ -123,7 +123,10 @@ var PracticeCore = (function () {
     });
     if (out.solution == null) out.solution = '';
     var a = out.answer;
-    out.inputMode = (typeof a === 'number' && (a < 0 || Math.abs(a) < 1e-3 || a >= 1e5)) ? 'text' : 'decimal';
+    /* where the sign is the point (signed: true, or a mistake value is negative) every draw gets the text
+       keyboard: the decimal pad has no “−” on iOS, and a per-draw choice would leak the answer's sign */
+    var signed = out.signed === true || out.mistakes.some(function (m) { return m.value < 0; });
+    out.inputMode = (typeof a === 'number' && (signed || a < 0 || Math.abs(a) < 1e-3 || a >= 1e5)) ? 'text' : 'decimal';
     return out;
   }
 

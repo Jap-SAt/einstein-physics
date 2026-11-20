@@ -390,7 +390,7 @@
 
   (function () {
     var bU = 7.59, bBa = 8.33, bKr = 8.51, before = 235 * bU, after = 141 * bBa + 92 * bKr, ans = after - before;
-    return { id: 'nuclear-3-02', level: 3, type: 'num', topics: ['s4', 's5'], unit: 'MeV',
+    return { id: 'nuclear-3-02', level: 3, type: 'num', signed: true, topics: ['s4', 's5'], unit: 'MeV',
       q: String.raw`ในฟิชชัน \({}^{1}_{0}n + {}^{235}_{92}\mathrm{U} \to {}^{141}_{56}\mathrm{Ba} + {}^{92}_{36}\mathrm{Kr} + 3\,{}^{1}_{0}n\) พลังงานยึดเหนี่ยวต่อนิวคลีออนของ U-235, Ba-141 และ Kr-92 เป็น 7.59, 8.33 และ 8.51 MeV ตามลำดับ ฟิชชันครั้งนี้ปล่อยพลังงานกี่ MeV`,
       answer: ans,
       mistakes: [

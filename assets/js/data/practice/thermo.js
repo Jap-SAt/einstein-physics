@@ -217,7 +217,7 @@
       ], Math.sqrt(v2), 'm/s');
     } },
 
-  { id: 'thermo-2-06', level: 2, type: 'num', topic: 's4', unit: 'J', range: [100, 850],
+  { id: 'thermo-2-06', level: 2, type: 'num', signed: true, topic: 's4', unit: 'J', range: [100, 850],
     gen: function (rng) {
       var W = pick(rng, 200, 900, 50);
       return { W: W, Q: pick(rng, 50, W - 100, 10) };

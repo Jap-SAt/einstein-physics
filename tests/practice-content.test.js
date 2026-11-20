@@ -200,6 +200,24 @@ for (const id of chapters) {
     }
   });
 
+  // The keyboard must not leak or block the sign: an item whose answer or any mistake value is negative in
+  // any draw gets inputMode 'text' (the keyboard with "−") on every draw.
+  test(`${id}: signed items use the text keyboard on every draw`, () => {
+    for (const it of [...L(2), ...L(3)]) {
+      const rng = PC.makeRng(4321), modes = new Set();
+      let neg = false;
+      for (let i = 0; i < (it.level === 2 ? DRAWS : 1); i++) {
+        const x = PC.instantiate(it, rng);
+        modes.add(x.inputMode);
+        if (x.answer < 0 || x.mistakes.some(mk => mk.value < 0)) neg = true;
+      }
+      if (neg) {
+        assert.equal(it.signed, true, `${it.id}: has negative answers or mistakes, needs signed: true`);
+        assert.deepEqual([...modes], ['text'], `${it.id}: inputMode per draw ${[...modes]}`);
+      }
+    }
+  });
+
   // A unit written as "×10^k …" means the learner types only the number in front; typing the full value
   // (answer · 10^k) must be recognised as a right value in the wrong form, on every draw.
   test(`${id}: ×10^k units recognise the full value`, () => {
@@ -278,6 +296,15 @@ for (const id of chapters) {
     }
   });
 }
+
+test('waves-2-07 (real/virtual image sign): the same keyboard for every draw', () => {
+  const { items, PC } = load('waves');
+  const it = items.find(x => x.id === 'waves-2-07');
+  const rng = PC.makeRng(5), modes = new Set(), signs = new Set();
+  for (let i = 0; i < DRAWS; i++) { const x = PC.instantiate(it, rng); modes.add(x.inputMode); signs.add(Math.sign(x.answer)); }
+  assert.deepEqual([...signs].sort(), [-1, 1], 'draws cover both signs');
+  assert.deepEqual([...modes], ['text']);
+});
 
 // Worked examples (Task 4): every <h2> section of a chapter that has a practice file shows >= 1
 // step-by-step example (.wx with >= 2 steps), and the old one-shot <details class="ex"> is gone.

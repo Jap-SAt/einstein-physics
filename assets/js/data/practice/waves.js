@@ -244,7 +244,7 @@
       ], v.k * dy, 'mm');
     } },
 
-  { id: 'waves-2-07', level: 2, type: 'num', topic: 's5', unit: 'cm', range: [-61, 88],
+  { id: 'waves-2-07', level: 2, type: 'num', signed: true, topic: 's5', unit: 'cm', range: [-61, 88],
     /* วัตถุไม่ใกล้โฟกัส (u ≥ 1.3f หรือ u ≤ 0.75f) จึงไม่ได้ภาพไกลเกินจริง */
     gen: function (rng) {
       var fo = pick(rng, 5, 20, 1), real = rng() < 0.6;
