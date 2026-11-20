@@ -41,12 +41,17 @@ var PracticeCore = (function () {
     s = s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+/g, function (m) {
       return '^' + m.split('').map(function (c) { return SUP[c]; }).join('');
     });
-    /* × 10^(-13) and × 10^{-13} first, then the bare × 10^-13 */
-    s = s.replace(/\s*[×x*]\s*10\s*\^\s*[({]\s*([-+]?\d+)\s*[)}]/gi, 'e$1');
-    s = s.replace(/\s*[×x*]\s*10\s*\^\s*(?=[-+]?\d)/gi, 'e');
-    s = s.replace(/^([-+]?\d{1,3}(?:,\d{3})+)(?!\d)/, function (m) { return m.replace(/,/g, ''); });
+    /* × 10^(-13) and × 10^{-13} first, then the bare × 10^-13 (× x * · ⋅ all mean “times”) */
+    s = s.replace(/\s*[×x*·⋅]\s*10\s*\^\s*[({]\s*([-+]?\d+)\s*[)}]/gi, 'e$1');
+    s = s.replace(/\s*[×x*·⋅]\s*10\s*\^\s*(?=[-+]?\d)/gi, 'e');
+    /* comma thousands (“12,000”, “1,234,567.5”) only when the first group does not start with 0 */
+    s = s.replace(/^([-+]?[1-9]\d{0,2}(?:,\d{3})+)(?!\d)/, function (m) { return m.replace(/,/g, ''); });
+    /* any other comma right after the leading digits is a decimal comma (“0,021” → 0.021) */
+    s = s.replace(/^([-+]?\d*),(?=\d)/, '$1.');
     /* thousands groups separated by single spaces (“10 980”, “1 234 567.5”) */
     s = s.replace(/^([-+]?[1-9]\d{0,2}(?: \d{3})+)(?!\d)/, function (m) { return m.replace(/ /g, ''); });
+    /* a space around the e of a power (“2.1 e-2”, “2.1 E -2”) */
+    s = s.replace(/^([-+]?(?:\d+\.?\d*|\.\d+))\s*e\s*([-+]?)\s*(?=\d)/i, '$1e$2');
     var m = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/i.exec(s);
     if (!m) return null;
     var rest = s.slice(m[0].length);
@@ -56,7 +61,8 @@ var PracticeCore = (function () {
     /* after a symbol unit (“71.6°”, “56%”, “2.3 µT”) no digit or dot may follow (“71.6°5”, “5%3” are unreadable) */
     if (/^\s*[°µμ%Ω]/.test(rest) && /[\d.]/.test(rest)) return null;
     /* a half-written power of ten (“2.4 x 10-13”, “2.4 × 10^”, “2.4e(-13)”) is unreadable, never the bare 2.4 */
-    if (/^\s*[×x*]/i.test(rest) || /^e\s*[-+({\d]/i.test(rest)) return null;
+    /* a lone e/E not starting a letter unit (“2.1e”, “2.1 e”, “2.1 e-”) is half a power too; “7.35 eV” stays a unit */
+    if (/^\s*[×x*·⋅]/i.test(rest) || /^\s*e(?![A-Za-z])/i.test(rest)) return null;
     var v = Number(m[0]);
     return isFinite(v) ? v : null;
   }

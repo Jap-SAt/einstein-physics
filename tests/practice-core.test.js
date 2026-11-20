@@ -66,6 +66,30 @@ test('parse rejects a number followed by a space and more digits instead of a pa
     assert.equal(PC.parseAnswer(s), null, s);
 });
 
+test('parse never turns an input into a different number (review finding 1)', () => {
+  // a leading "0," group is a decimal comma, never thousands; other non-thousands commas are decimal commas
+  for (const [s, v] of [['0,021', 0.021], ['-0,021', -0.021], ['−0,021', -0.021], ['0,5', 0.5], ['3,14', 3.14], ['2,1e-2', 0.021]])
+    near(PC.parseAnswer(s), v, 1e-12);
+  // a power of ten written with a space before e/E
+  for (const s of ['2.1 e-2', '2.1 E-2', '2.1 e -2']) near(PC.parseAnswer(s), 0.021, 1e-12);
+  // middle dots as the multiplication sign
+  for (const s of ['2.1 · 10^-2', '2.1 ⋅ 10^-2', '2.1·10^-2', '2.1 ⋅ 10^(-2)', '2.1 · 10⁻²']) near(PC.parseAnswer(s), 0.021, 1e-12);
+  // half-written powers are unreadable, never the bare mantissa
+  for (const s of ['2.1e', '2.1 e', '2.1E', '2.1 e-', '2.1 · 10-2', '2.1 ⋅ 10', '2.1 ·'])
+    assert.equal(PC.parseAnswer(s), null, s);
+  // a letter unit that starts with e stays a unit
+  assert.equal(PC.parseAnswer('7.35 eV'), 7.35);
+  assert.equal(PC.parseAnswer('7.35eV'), 7.35);
+});
+
+test('parse regression set (review finding 1)', () => {
+  for (const s of ['0.021', '.021', '2.1e-2', '2.1×10^-2', '2.1 x 10^(-2)', '2.1 × 10⁻²']) near(PC.parseAnswer(s), 0.021, 1e-12);
+  for (const [s, v] of [['12,000', 12000], ['12 000', 12000], ['1,234,567.5', 1234567.5], ['−3.5', -3.5], ['7.35 m', 7.35],
+    ['7.35 เมตร', 7.35], ['300 W/m2', 300], ['71.6°', 71.6], ['56%', 56]])
+    assert.equal(PC.parseAnswer(s), v, s);
+  for (const s of ['2.4 x 10-13', '71.6°5']) assert.equal(PC.parseAnswer(s), null, s);
+});
+
 test('check tolerance', () => {
   assert.equal(PC.checkNumeric(7.49, 7.35).ok, true);
   assert.equal(PC.checkNumeric(7.6, 7.35).ok, false);
