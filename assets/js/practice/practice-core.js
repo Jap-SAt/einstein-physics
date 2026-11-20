@@ -79,6 +79,11 @@ var PracticeCore = (function () {
     if (out.unit == null) out.unit = '';
     if (!Array.isArray(out.hints)) out.hints = [];
     if (!Array.isArray(out.mistakes)) out.mistakes = [];
+    /* element-level functions: hints [string | (vars) → string], mistakes [{ value | (vars) → number, msg }] */
+    out.hints = out.hints.map(function (h) { return typeof h === 'function' ? h(vars) : h; });
+    out.mistakes = out.mistakes.map(function (m) {
+      return { value: typeof m.value === 'function' ? m.value(vars) : m.value, msg: m.msg };
+    });
     if (out.solution == null) out.solution = '';
     var a = out.answer;
     out.inputMode = (typeof a === 'number' && (a < 0 || Math.abs(a) < 1e-3 || a >= 1e5)) ? 'text' : 'decimal';

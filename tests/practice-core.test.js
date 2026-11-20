@@ -116,3 +116,17 @@ test('instantiate', () => {
     assert.equal(PC.instantiate({ id: 'y', level: 3, type: 'numeric', answer: ans }, PC.makeRng(1)).inputMode, mode);
   }
 });
+
+test('instantiate resolves per-element hints and mistake values', () => {
+  const item = {
+    id: 'mech-2-02', level: 2, type: 'num', unit: 'm',
+    gen: () => ({ h: 4 }), q: v => `h = ${v.h}`, answer: v => v.h * 2,
+    hints: ['plain', v => 'h is ' + v.h],
+    mistakes: [{ value: v => v.h * 4, msg: 'twice' }, { value: 1, msg: 'fixed' }]
+  };
+  const x = PC.instantiate(item, PC.makeRng(1));
+  assert.deepEqual(x.hints, ['plain', 'h is 4']);
+  assert.deepEqual(x.mistakes, [{ value: 16, msg: 'twice' }, { value: 1, msg: 'fixed' }]);
+  assert.deepEqual(PC.checkNumeric(16, x.answer, x.tol, x.mistakes), { ok: false, msg: 'twice' });
+  assert.equal(typeof item.mistakes[0].value, 'function', 'item itself is not mutated');
+});
