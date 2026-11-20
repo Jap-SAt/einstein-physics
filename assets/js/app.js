@@ -1,5 +1,5 @@
 /* ════════════════ router ════════════════
-   #home · #<id> (บทเรียน) · #<id>-sim (การจำลอง) · #<id>-quiz (แบบทดสอบ) */
+   #home · #<id> (บทเรียน) · #<id>-sim (การจำลอง) · #<id>-quiz (แบบฝึกหัด; PracticeUI) */
 const view = $('#view');
 let currentSim = null;
 function stopSim() { if (currentSim) { try { currentSim.dispose(); } catch (e) {} currentSim = null; } }
@@ -39,9 +39,8 @@ window.addEventListener('hashchange', () => route());
 /* ════════════════ home ════════════════ */
 function renderHome() {
   const pick = m => {
-    const b = store.get('best_' + m.id, null);
-    const valid = b && Number.isInteger(b.s) && Number.isInteger(b.n) && b.n > 0;   // localStorage may hold anything
-    const badge = valid ? `<span class="badge mono">${b.s}/${b.n}</span>` : `<span class="badge">ยังไม่เริ่ม</span>`;
+    const t = PracticeUI.progressText(m.id);
+    const badge = `<span class="badge${/^\d/.test(t) ? ' mono' : ''}">${t}</span>`;
     return `<a class="pick compact" href="#${m.id}">
       <span class="ic" style="background:${m.soft};color:${m.acc}">${ICONS[m.id]}</span>
       <span class="flex-1 min-w-0"><span class="t block truncate">${m.title}<span class="en">${m.en}</span></span><span class="s block truncate">${m.sub}</span></span>
@@ -58,7 +57,7 @@ function renderHome() {
         <h1>เห็นฟิสิกส์<br>ก่อน<span class="soft">จำสูตร</span></h1>
         <button class="atom-btn" id="heroAtom" aria-label="คลิกเพื่อย้อนชมกำเนิดจักรวาล" title="คลิกเพื่อย้อนชมกำเนิดจักรวาล"><span class="atom-tip">คลิกเพื่อย้อนสู่กำเนิดจักรวาล</span></button>
       </div>
-      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน และคลื่น แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้ววัดความเข้าใจด้วยแบบทดสอบ</p>
+      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน และคลื่น แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้วฝึกทำโจทย์ทีละระดับด้วยแบบฝึกหัด</p>
       <div class="flex flex-wrap gap-3 mt-8">
         <a class="btn btn-primary" href="#mech">เริ่มบทที่ 1</a>
         <a class="btn btn-ghost" href="#atom-sim">ลองการจำลองอะตอม</a>
@@ -86,7 +85,7 @@ function renderHome() {
 
 /* ════════════════ module page ════════════════ */
 function renderModule(m, tab) {
-  const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบทดสอบ', m.id + '-quiz']];
+  const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบฝึกหัด', m.id + '-quiz']];
   view.innerHTML = `
   <div class="modhead"><div class="wrap modhead-in">
     <div class="flex items-center gap-3 min-w-0 mr-auto">
@@ -99,7 +98,7 @@ function renderModule(m, tab) {
   const tv = $('#tabview');
   if (tab === 'learn') renderLecture(tv, m);
   else if (tab === 'sim') renderSim(tv, m);
-  else renderQuiz(tv, m);
+  else PracticeUI.render(tv, m);
 }
 
 /* ── lecture ── */
@@ -112,7 +111,7 @@ function renderLecture(tv, m) {
   art.appendChild(tpl.content.cloneNode(true));
   art.insertAdjacentHTML('beforeend', `<div class="nextcards">
      <a href="#${m.id}-sim"><b>ลองในการจำลอง 3D →</b><span>ปรับค่าเองแล้วสังเกตผล</span></a>
-     <a href="#${m.id}-quiz"><b>ทำแบบทดสอบ →</b><span>${QUIZ[m.id].length} ข้อ พร้อมเฉลยละเอียด</span></a></div>`);
+     <a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}</span></a></div>`);
   const hs = [...art.querySelectorAll('h2')];
   $('#tocl').innerHTML = hs.map(h => `<a role="button" tabindex="0" data-t="${h.id}">${h.textContent.replace(/^\d+/, '')}</a>`).join('');
   $('#tocl').onclick = e => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.t).scrollIntoView({ behavior: 'smooth' }); };
@@ -121,6 +120,7 @@ function renderLecture(tv, m) {
     es.forEach(en => { if (en.isIntersecting) document.querySelectorAll('#tocl a').forEach(a => a.classList.toggle('on', a.dataset.t === en.target.id)); });
   }, { rootMargin: '-20% 0px -70% 0px' });
   hs.forEach(h => lecObs.observe(h));
+  if (typeof PracticeUI !== 'undefined') PracticeUI.enhanceWorked(art);
   typeset(art);
 }
 window.addEventListener('scroll', () => {
@@ -128,54 +128,6 @@ window.addEventListener('scroll', () => {
   const d = document.documentElement, max = d.scrollHeight - innerHeight;
   bar.style.width = (max > 0 ? Math.min(100, 100 * scrollY / max) : 0) + '%';
 }, { passive: true });
-
-/* ── quiz ── */
-function renderQuiz(tv, m) {
-  const qs = QUIZ[m.id], L = ['ก', 'ข', 'ค', 'ง'];
-  let i = 0, score = 0, pick = -1, checked = false; const res = [];
-  // shuffle option order once per attempt; q.a keeps pointing at the original index
-  const order = qs.map(q => { const idx = q.o.map((_, k) => k); for (let k = idx.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [idx[k], idx[j]] = [idx[j], idx[k]]; } return idx; });
-  tv.innerHTML = `<div class="quiz"><div class="flex justify-between items-baseline"><div class="kicker">แบบทดสอบ · ${m.title}</div><div class="mono text-[13px] text-[var(--muted)]" id="qc"></div></div><div class="qdots" id="qd"></div><div id="qb"></div></div>`;
-  const qb = $('#qb');
-  function dots() { $('#qd').innerHTML = qs.map((_, k) => `<i class="${k < res.length ? (res[k] ? 'ok' : 'no') : k === i ? 'cur' : ''}"></i>`).join(''); $('#qc').textContent = `${Math.min(i + 1, qs.length)} / ${qs.length}`; }
-  function show() {
-    pick = -1; checked = false; dots();
-    const q = qs[i], ord = order[i];
-    qb.innerHTML = `<div class="qcard"><div class="qtext">${q.q}</div>
-      <div id="opts">${ord.map((oi, k) => `<button class="opt" data-oi="${oi}"><span class="k">${L[k]}</span><span>${q.o[oi]}</span></button>`).join('')}</div>
-      <div id="fb"></div>
-      <div class="flex justify-end mt-6"><button class="btn btn-primary" id="qbtn" disabled>ตรวจคำตอบ</button></div></div>`;
-    $('#opts').onclick = e => { const b = e.target.closest('.opt'); if (!b || checked) return; pick = +b.dataset.oi; document.querySelectorAll('.opt').forEach(x => x.classList.toggle('sel', x === b)); $('#qbtn').disabled = false; };
-    $('#qbtn').onclick = () => {
-      if (!checked) {
-        checked = true; const ok = pick === q.a; if (ok) score++; res.push(ok);
-        document.querySelectorAll('.opt').forEach(x => { x.disabled = true; x.classList.remove('sel'); const oi = +x.dataset.oi; if (oi === q.a) x.classList.add('right'); else if (oi === pick) x.classList.add('wrong'); });
-        $('#fb').innerHTML = `<div class="fb ${ok ? 'ok' : 'no'}"><b>${ok ? 'ถูกต้อง' : 'ยังไม่ถูก ลองดูเหตุผล'}</b>${q.e}</div>`;
-        $('#qbtn').textContent = i < qs.length - 1 ? 'ข้อถัดไป' : 'ดูผลลัพธ์';
-        dots(); typeset($('#fb'));
-      } else { i++; if (i < qs.length) show(); else finish(); }
-    };
-    typeset(qb);
-  }
-  function finish() {
-    i = qs.length; dots();
-    const best = store.get('best_' + m.id, null);
-    if (!best || score > best.s) store.set('best_' + m.id, { s: score, n: qs.length });
-    const pct = Math.round(100 * score / qs.length);
-    const msg = pct >= 90 ? 'ยอดเยี่ยม พร้อมไปบทถัดไปแล้ว' : pct >= 60 ? 'เข้าใจหลักแล้ว ทบทวนข้อที่พลาดอีกนิด' : 'ลองกลับไปอ่านบทเรียนและเล่นการจำลองอีกครั้ง';
-    const idx = MODS.findIndex(x => x.id === m.id), nx = MODS[idx + 1];
-    qb.innerHTML = `<div class="qcard text-center"><div class="kicker">ผลการทดสอบ</div>
-      <div class="mono text-[64px] font-semibold leading-none mt-4" style="color:${m.acc}">${score}<span class="text-[28px] text-[var(--muted)]">/${qs.length}</span></div>
-      <p class="mt-4 text-[17px]">${msg}</p>
-      <div class="flex flex-wrap justify-center gap-3 mt-7">
-        <a class="btn btn-ghost" href="#${m.id}">ทบทวนบทเรียน</a>
-        <button class="btn btn-ghost" id="again">ทำใหม่</button>
-        ${nx ? `<a class="btn btn-primary" href="#${nx.id}">บทถัดไป: ${nx.title}</a>` : `<a class="btn btn-primary" href="#home">กลับหน้าแรก</a>`}
-      </div></div>`;
-    $('#again').onclick = () => renderQuiz(tv, m);
-  }
-  show();
-}
 
 /* ── simulation page ── */
 const SIMS = {
