@@ -401,4 +401,21 @@ async def test_worked_all_open_fit_390():
             await s.close()
 
 
+
+async def test_all_chapters_have_practice():
+    """Every chapter's #<id>-quiz tab shows the level map with 7/7/6 dots (the old quiz is gone)."""
+    for ch in practice_chapters():
+        s = await open_page(ch + '-quiz')
+        try:
+            await s.page.wait_for_selector('.px-row')
+            r = await s.page.evaluate("""() => ({
+              dots: [...document.querySelectorAll('.px-row')].map(r => r.querySelectorAll('.px-dot').length),
+              old: !!document.querySelector('#qb, #opts') })""")
+            assert r['dots'] == [7, 7, 6], (ch, r)
+            assert not r['old'], (ch, r)
+            assert not s.errors, (ch, s.errors)
+        finally:
+            await s.close()
+
+
 run_tests(globals())

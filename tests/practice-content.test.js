@@ -301,3 +301,10 @@ for (const id of chapters) {
     assert.equal(counted, all, `lec-${id}: a .wx block does not match the markup contract`);
   });
 }
+
+test('old quiz is retired: no QUIZ data script, no renderQuiz', () => {
+  assert.doesNotMatch(INDEX, /data\/quiz\.js/);
+  assert.equal(fs.existsSync(path.join(ROOT, 'assets/js/data/quiz.js')), false);
+  const app = fs.readFileSync(path.join(ROOT, 'assets/js/app.js'), 'utf8');
+  assert.doesNotMatch(app, /renderQuiz|\bQUIZ\b|best_/);
+});
