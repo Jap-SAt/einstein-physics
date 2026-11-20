@@ -44,6 +44,10 @@ var PracticeUI = (function () {
     return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
   }
   function q(sel) { return cur.el.querySelector(sel); }
+  /* keep keyboard focus on the next control to use, never on <body> after a control is disabled/hidden/re-rendered */
+  function focusTo(el, keepScroll) {
+    if (el && !el.disabled && !el.hidden) el.focus({ preventScroll: !!keepScroll });
+  }
   function seed() { return (Math.random() * 4294967296) >>> 0; }
 
   /* typeset only while the screen that asked for it is still the current one; one MathJax job at a time */
@@ -74,7 +78,7 @@ var PracticeUI = (function () {
     showMap();
   }
 
-  function showMap(note) {
+  function showMap(note, focus) {
     newScreen();
     var m = cur.m, items = cur.items, rec = load(m.id);
     var sum = PC.summarize(items, rec), rc = PC.recommend(sum, rec, items);
@@ -134,8 +138,10 @@ var PracticeUI = (function () {
     if (reset) reset.onclick = function () {
       if (!confirm('ล้างความคืบหน้าแบบฝึกหัดของบท “' + m.title + '” ทั้งหมด?')) return;
       try { localStorage.removeItem('einstein_' + key(m.id)); } catch (e) {}
-      showMap();
+      showMap(null, true);
     };
+    /* coming back from the runner: focus the recommended action (else the first level button) */
+    if (focus) focusTo(q('.px-row.rec .px-go, .px-foot .btn-primary') || q('.px-go'));
   }
 
   /* ════════ item runner ════════ */
@@ -167,9 +173,10 @@ var PracticeUI = (function () {
       '<div class="kicker">' + s.label + '</div><div class="qdots">' + sessionDots() + '</div>' +
       '<div class="qcard px-item" data-id="' + it.id + '">' + lvTag + body + '</div></div>';
     cur.el = cur.tv.firstChild;
-    q('.px-back').onclick = function () { showMap(); };
+    q('.px-back').onclick = function () { showMap(null, true); };
     if (it.type === 'mcq') wireMcq(inst, st); else wireNum(inst, it, st);
     if (cur.tv.getBoundingClientRect().top < 0) window.scrollTo(0, 0);
+    focusTo(q(it.type === 'mcq' ? '.opt' : '.px-in'), true);   // the question stays in view
     tset(q('.px-item'), tok);
   }
 
@@ -178,7 +185,7 @@ var PracticeUI = (function () {
     var s = cur.session;
     if (s.idx < s.list.length - 1) { s.idx++; showItem(); return; }
     var rec = load(cur.m.id), right = s.list.filter(function (it) { var x = statusOf(rec, it.id); return x === 'ok' || x === 'ok-help'; }).length;
-    showMap('จบชุด “' + s.label + '” แล้ว · ตอนนี้ถูก <span class="mono">' + right + '/' + s.list.length + '</span> ข้อ');
+    showMap('จบชุด “' + s.label + '” แล้ว · ตอนนี้ถูก <span class="mono">' + right + '/' + s.list.length + '</span> ข้อ', true);
   }
 
   /* ── multiple choice (level 1): one answer per round, then the explanation ── */
@@ -216,6 +223,7 @@ var PracticeUI = (function () {
         '<div class="px-e"><span class="px-lab">' + (ok ? 'เหตุผล' : 'คำตอบที่ถูกและเหตุผล') + '</span>' + inst.e + '</div></div>';
       q('.px-check').hidden = true;
       var nb = q('.px-next'); nb.hidden = false; nb.onclick = goNext;
+      focusTo(nb);
       refreshDots();
       tset(fb);
     };
@@ -247,6 +255,7 @@ var PracticeUI = (function () {
       lock();
       var nb = q('.px-next'); nb.hidden = false; nb.onclick = goNext;
       var nw = q('.px-newbtn'); if (nw) nw.hidden = false;
+      focusTo(nb);
       refreshDots();
     }
 
@@ -293,6 +302,7 @@ var PracticeUI = (function () {
       q('.px-hints').appendChild(h);
       hb.textContent = 'คำใบ้ ' + Math.min(st.hints + 1, n) + '/' + n;
       hb.disabled = st.hints >= n;
+      if (hb.disabled) focusTo(input.disabled ? q('.px-next') : input, true);
       tset(h);
     };
 
@@ -302,7 +312,8 @@ var PracticeUI = (function () {
       sol.innerHTML = '<span class="px-lab">วิธีทำ</span>' + inst.solution;
       sol.hidden = false;
       q('.px-solbtn').disabled = true;
-      if (!st.done) {
+      if (st.done) focusTo(q('.px-next'));
+      else {
         st.sawSolution = true;
         save(cur.m.id, inst.id, PC.classify({ correct: false, sawSolution: true, tries: st.tries, type: 'num' }));
         say('no', '<b>เปิดวิธีทำแล้ว</b>ข้อนี้ยังไม่นับว่าถูก · ' + (it.level === 2

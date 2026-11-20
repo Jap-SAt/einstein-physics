@@ -308,6 +308,57 @@ async def test_signed_item_keyboard():
         await s.close()
 
 
+ACTIVE = """(scope) => { const a = document.activeElement;
+  return { tag: a.tagName, cls: String(a.className), inside: !!a.closest(scope),
+           live: a.matches('button:not([disabled]):not([hidden]), input:not([disabled]), a[href]') }; }"""
+
+
+async def focus_on(s, sel, step, scope='.px-run'):
+    r = await s.page.evaluate(ACTIVE, scope)
+    assert r['inside'] and r['live'], (step, r)
+    assert await s.page.evaluate("(sel) => document.activeElement.matches(sel)", sel), (step, sel, r)
+
+
+async def test_focus_follows_the_runner():
+    """Keyboard focus never falls to <body>: after each runner step it sits on the next control to use."""
+    s = await open_page('mech-quiz')
+    try:
+        await start_level(s, 1)
+        await focus_on(s, '.opt', 'start level 1')
+        await mcq_pick(s, True)
+        await focus_on(s, '.px-next', 'mcq checked')
+        await s.page.click('.px-next')
+        await focus_on(s, '.opt', 'next mcq')
+        for k in range(6):                                  # finish the set: the map gets focus back
+            await mcq_pick(s, True)
+            await s.page.keyboard.press('Enter')            # Enter on the focused .px-next
+            await s.page.wait_for_timeout(50)
+        await s.page.wait_for_selector('.px-map')
+        await focus_on(s, '.px-go, .px-redo, a.btn', 'set finished', scope='.px-map')
+
+        await start_level(s, 2)
+        await focus_on(s, '.px-in', 'start level 2')
+        await s.page.fill('.px-in', '123456')
+        await s.page.keyboard.press('Enter')
+        await focus_on(s, '.px-in', 'wrong answer')
+        await answer(s, await correct_value(s))
+        await focus_on(s, '.px-next', 'correct answer')
+        await s.page.click('.px-next')
+        await focus_on(s, '.px-in', 'next numeric item')
+        n = await s.page.evaluate("() => __px.current().hints.length")
+        assert n >= 1, n
+        for _ in range(n):
+            await s.page.click('.px-hintbtn')
+        await focus_on(s, '.px-in', 'last hint')
+        await s.page.click('.px-solbtn')
+        await focus_on(s, '.px-next', 'solution opened')
+        await s.page.click('.px-newbtn')
+        await focus_on(s, '.px-in', 'new numbers')
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 NO_HSCROLL = "() => document.documentElement.scrollWidth <= window.innerWidth"
 
 
