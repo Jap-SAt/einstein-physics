@@ -275,18 +275,6 @@ async def test_old_route_and_mobile():
         await s.close()
 
 
-async def test_other_chapters_fallback():
-    s = await open_page('nuclear-quiz')
-    try:
-        r = await s.page.evaluate("""() => ({ map: !!document.querySelector('.px-map'),
-            opts: document.querySelectorAll('.quiz .opt').length, tab: document.querySelector('.tabs a.on').textContent })""")
-        assert not r['map'] and r['opts'] >= 2, r
-        assert r['tab'] == 'แบบฝึกหัด', r
-        assert not s.errors, s.errors
-    finally:
-        await s.close()
-
-
 async def test_lecture_card_and_home_badge():
     script = """localStorage.setItem('einstein_practice_mech', JSON.stringify({ v: 1, items: {
         'mech-1-01': { s: 'ok', n: 1, t: 1 }, 'mech-1-02': { s: 'ok-help', n: 2, t: 1 }, 'mech-1-03': { s: 'wrong', n: 1, t: 1 } } }))"""

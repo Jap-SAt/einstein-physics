@@ -111,6 +111,9 @@ table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:14.5px;
 .tbl th,.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .tbl tr:last-child td{border-bottom:0}
 .tbl th{background:var(--soft);font-weight:600;font-size:13px}
+.tbl-scroll{overflow-x:auto;margin:18px 0 24px;border-radius:12px}   /* a wide table scrolls inside its own box on a phone, never the page */
+.tbl-scroll>table.tbl{margin:0}
+@media (max-width:640px){.tbl-scroll .tbl th,.tbl-scroll .tbl td{padding:8px 5px}}
 .try{display:inline-flex;gap:6px;align-items:center;font-weight:600;font-size:15px;color:var(--macc);text-decoration:none;border-bottom:1px solid transparent}
 .try:hover{border-color:currentColor}
 .sumbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px;margin-top:56px}
