@@ -200,6 +200,21 @@ for (const id of chapters) {
     }
   });
 
+  // A unit written as "×10^k …" means the learner types only the number in front; typing the full value
+  // (answer · 10^k) must be recognised as a right value in the wrong form, on every draw.
+  test(`${id}: ×10^k units recognise the full value`, () => {
+    for (const it of [...L(2), ...L(3)]) {
+      if (!/^\s*[×x*·⋅]\s*10/.test(it.unit)) continue;
+      const k = PC.unitPower(it.unit);
+      assert.ok(Number.isInteger(k) && k !== 0, `${it.id}: unitPower(${it.unit}) = ${k}`);
+      const rng = PC.makeRng(77);
+      for (let i = 0; i < (it.level === 2 ? 100 : 1); i++) {
+        const x = PC.instantiate(it, rng);
+        assert.equal(PC.scaleSlip(x.answer * Math.pow(10, k), x.answer, x.tol, x.unit), k, `${it.id} vars=${JSON.stringify(x.vars)}`);
+      }
+    }
+  });
+
   test(`${id}: L3 fixed`, () => {
     for (const it of L(3)) {
       const tol = it.tol == null ? 0.02 : it.tol;

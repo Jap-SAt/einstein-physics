@@ -90,6 +90,24 @@ test('parse regression set (review finding 1)', () => {
   for (const s of ['2.4 x 10-13', '71.6°5']) assert.equal(PC.parseAnswer(s), null, s);
 });
 
+test('unitPower reads the ×10^k factor at the start of a unit (review finding 2)', () => {
+  for (const [u, k] of [['×10⁶ m/s', 6], ['×10^6 m/s', 6], ['×10¹³ โฟตอน', 13], ['×10⁹ ปี', 9], ['×10⁻¹⁵ m', -15],
+    ['× 10^(-15) m', -15], ['x10^{18} ครั้ง/s', 18], ['×10¹⁴ Hz', 14]])
+    assert.equal(PC.unitPower(u), k, u);
+  for (const u of ['m/s', '', 'eV', 'cm', '10 m', 'J', '×10'])
+    assert.equal(PC.unitPower(u), null, u);
+});
+
+test('scaleSlip spots the right value typed in full in a ×10^k field (review finding 2)', () => {
+  assert.equal(PC.scaleSlip(7.1e6, 7.1, 0.02, '×10⁶ m/s'), 6);
+  assert.equal(PC.scaleSlip(7.05e6, 7.1, 0.02, '×10⁶ m/s'), 6);
+  assert.equal(PC.scaleSlip(1.2e-15, 1.2, 0.02, '×10⁻¹⁵ m'), -15);
+  assert.equal(PC.scaleSlip(7.1, 7.1, 0.02, '×10⁶ m/s'), null, 'the right answer is not a slip');
+  assert.equal(PC.scaleSlip(8e6, 7.1, 0.02, '×10⁶ m/s'), null, 'a wrong full value is not a slip');
+  assert.equal(PC.scaleSlip(7.1e6, 7.1, 0.02, 'm/s'), null, 'no ×10^k in the unit');
+  assert.equal(PC.scaleSlip(NaN, 7.1, 0.02, '×10⁶ m/s'), null);
+});
+
 test('check tolerance', () => {
   assert.equal(PC.checkNumeric(7.49, 7.35).ok, true);
   assert.equal(PC.checkNumeric(7.6, 7.35).ok, false);

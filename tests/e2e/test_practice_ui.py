@@ -250,7 +250,42 @@ async def test_input_mode():
         await s.close()
 
 
-NO_HSCROLL = "() => document.documentElement.scrollWidth <= window.innerWidth"
+FULL_VALUE = "(k) => __px.current().answer + 'e' + k"
+NUC_REC = "() => JSON.parse(localStorage.getItem('einstein_practice_nuclear') || 'null')"
+
+
+async def test_full_value_in_power_unit():
+    """Typing answer·10^k in a '×10^k …' field says the value is right but the form is not; no try is counted."""
+    s = await open_page('nuclear-quiz')
+    try:
+        await start_level(s, 3)
+        assert await s.page.evaluate("() => __px.current().id") == 'nuclear-3-01'
+        assert await s.page.evaluate("() => __px.current().unit") == '×10⁹ ปี'
+        await answer(s, await s.page.evaluate(FULL_VALUE, 9))
+        txt = await fb_text(s)
+        assert 'ค่าถูกแล้ว' in txt and 'ให้พิมพ์เฉพาะตัวเลขหน้า' in txt, txt
+        assert 'ลองตรวจการคำนวณ' not in txt, txt
+        assert await s.page.evaluate(NUC_REC) is None
+        assert await s.page.evaluate("() => __px.state().tries") == 0
+        assert not await s.page.is_disabled('.px-in')
+        await answer(s, await correct_value(s))
+        assert 'ถูกต้อง' in await fb_text(s)
+        rec = await s.page.evaluate(NUC_REC)
+        assert rec['items']['nuclear-3-01']['s'] == 'ok', rec
+        # an item with its own message for this slip keeps that message, and it is not counted either
+        await s.page.click('.px-back')
+        await start_level(s, 2)
+        assert await s.page.evaluate("() => __px.current().id") == 'nuclear-2-01'
+        await answer(s, await s.page.evaluate(FULL_VALUE, -15))
+        txt = await fb_text(s)
+        assert 'ตัวเลขถูกแล้ว แต่ช่องคำตอบมีหน่วย' in txt, txt
+        assert await s.page.evaluate("() => __px.state().tries") == 0
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+NO_HSCROLL ="() => document.documentElement.scrollWidth <= window.innerWidth"
 
 
 async def test_old_route_and_mobile():

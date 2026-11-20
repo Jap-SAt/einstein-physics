@@ -83,6 +83,27 @@ var PracticeCore = (function () {
     return { ok: false, msg: null };
   }
 
+  /* k of a unit that starts with a ×10^k factor (“×10⁶ m/s”, “×10^6 m/s”, “× 10^(-15) m”), else null */
+  function unitPower(unit) {
+    if (typeof unit !== 'string') return null;
+    var s = unit.trim().replace(/−/g, '-').replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+/g, function (m) {
+      return '^' + m.split('').map(function (c) { return SUP[c]; }).join('');
+    });
+    var m = /^[×x*·⋅]\s*10\s*\^\s*(?:[({]\s*([-+]?\d+)\s*[)}]|([-+]?\d+))/i.exec(s);
+    if (!m) return null;
+    var k = parseInt(m[1] || m[2], 10);
+    return k ? k : null;
+  }
+
+  /* the learner typed the right value in full (answer · 10^k) into a field whose unit already says ×10^k:
+     returns k, else null. A value that is already right is never a slip. */
+  function scaleSlip(value, answer, tol, unit) {
+    if (tol == null) tol = DEFAULT_TOL;
+    if (typeof value !== 'number' || !isFinite(value) || within(value, answer, tol)) return null;
+    var k = unitPower(unit);
+    return k !== null && within(value, answer * Math.pow(10, k), tol) ? k : null;
+  }
+
   function instantiate(item, rng) {
     var vars = typeof item.gen === 'function' ? item.gen(rng) : null;
     var out = {};
@@ -162,6 +183,7 @@ var PracticeCore = (function () {
 
   var api = {
     makeRng: makeRng, pick: pick, parseAnswer: parseAnswer, checkNumeric: checkNumeric,
+    unitPower: unitPower, scaleSlip: scaleSlip,
     instantiate: instantiate, classify: classify, summarize: summarize, recommend: recommend,
     readRecord: readRecord, fmt: fmt
   };

@@ -254,6 +254,15 @@ var PracticeUI = (function () {
       if (st.done || st.sawSolution) return;
       var raw = input.value, x = PC.parseAnswer(raw);
       if (x === null) { say('warn', '<b>อ่านตัวเลขไม่ออก</b>ลองพิมพ์แบบ 2.1e-2 (ไม่นับเป็นการตอบ)'); return; }
+      /* the right value typed in full into a “×10^k …” field: a form slip, not a try; the item's own message wins */
+      var k = PC.scaleSlip(x, inst.answer, inst.tol, inst.unit);
+      if (k !== null) {
+        var pw = '×10<sup>' + String(k).replace('-', '−') + '</sup>';
+        var own = PC.checkNumeric(x, inst.answer, inst.tol, inst.mistakes).msg;
+        say('warn', (own ? '<b>ยังไม่ต้องพิมพ์ ' + pw + '</b>' + own
+          : '<b>ค่าถูกแล้ว แต่ช่องนี้มีหน่วย' + unit + ' อยู่แล้ว</b>ให้พิมพ์เฉพาะตัวเลขหน้า ' + pw) + ' (ไม่นับเป็นการตอบ)');
+        return;
+      }
       st.tries++;
       var r = PC.checkNumeric(x, inst.answer, inst.tol, inst.mistakes);
       if (r.ok) {
