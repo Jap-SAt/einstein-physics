@@ -320,8 +320,48 @@ var PracticeUI = (function () {
     };
   }
 
-  /* Task 4 fills this in (worked-example stepper in the lecture). */
-  function enhanceWorked() {}
+  /* ════════ worked examples in the lecture ════════
+     Markup: <div class="wx"><div class="wx-q">…</div><ol class="wx-steps"><li>…</li>…</ol></div>
+     Steps stay in the DOM (hidden attribute) so the lecture's one MathJax pass typesets them too;
+     each click un-hides exactly one. data-wx marks a block as done, so enhancing twice adds nothing. */
+  function enhanceWorked(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('.wx').forEach(function (wx) {
+      if (wx.getAttribute('data-wx') === 'on') return;
+      var list = wx.querySelector('.wx-steps');
+      var steps = list ? [].filter.call(list.children, function (x) { return x.tagName === 'LI'; }) : [];
+      if (!steps.length) return;
+      wx.setAttribute('data-wx', 'on');
+      var n = steps.length, shown = 0;
+      steps.forEach(function (li) { li.hidden = true; });
+
+      var intro = document.createElement('p');
+      intro.className = 'wx-intro';
+      intro.textContent = 'ลองคิดเองก่อน แล้วค่อยเปิดทีละขั้น';
+      list.parentNode.insertBefore(intro, list);
+
+      var ctrl = document.createElement('div');
+      ctrl.className = 'wx-ctrl';
+      ctrl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm wx-next">ดูขั้นต่อไป</button>' +
+        '<span class="mono wx-count" aria-live="polite">ขั้น 0/' + n + '</span>';
+      list.parentNode.insertBefore(ctrl, list.nextSibling);
+
+      var btn = ctrl.querySelector('.wx-next'), count = ctrl.querySelector('.wx-count');
+      btn.onclick = function () {
+        if (shown >= n) return;
+        var li = steps[shown++];
+        li.hidden = false;
+        li.classList.add('wx-in');
+        count.textContent = 'ขั้น ' + shown + '/' + n;
+        if (shown === n) {
+          // the button goes away; keep keyboard focus nearby instead of dropping it to <body>
+          li.tabIndex = -1;
+          btn.remove();
+          li.focus({ preventScroll: true });
+        }
+      };
+    });
+  }
 
   window.__px = {
     current: function () { return cur ? cur.inst : null; },

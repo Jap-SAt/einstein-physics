@@ -214,3 +214,41 @@ for (const id of chapters) {
     }
   });
 }
+
+// Worked examples (Task 4): every <h2> section of a chapter that has a practice file shows >= 1
+// step-by-step example (.wx with >= 2 steps), and the old one-shot <details class="ex"> is gone.
+function lectureBody(id) {
+  const m = new RegExp(`<template id="lec-${id}">([\\s\\S]*?)</template>`).exec(INDEX);
+  return m ? m[1] : null;
+}
+function lectureSections(id) {
+  const body = lectureBody(id);
+  if (!body) return null;
+  return body.split(/(?=<h2 id=")/).slice(1).map(chunk => ({ id: /^<h2 id="([^"]+)"/.exec(chunk)[1], html: chunk }));
+}
+function workedBlocks(html) {
+  return [...html.matchAll(/<div class="wx">([\s\S]*?)<\/ol>\s*<\/div>/g)].map(x => x[1]);
+}
+
+for (const id of chapters) {
+  test(`${id}: worked coverage`, () => {
+    const body = lectureBody(id);
+    assert.ok(body, `no <template id="lec-${id}">`);
+    assert.doesNotMatch(body, /<details class="ex"/, `lec-${id} still has <details class="ex">`);
+    const secs = lectureSections(id);
+    assert.ok(secs.length > 0, `no <h2 id> in lec-${id}`);
+    for (const s of secs) {
+      const wx = workedBlocks(s.html);
+      assert.ok(wx.length >= 1, `section ${s.id} has no .wx worked example`);
+      for (const w of wx) {
+        assert.match(w, /^\s*<div class="wx-q">[\s\S]+?<\/div>\s*<ol class="wx-steps">/, `section ${s.id}: .wx must be .wx-q then ol.wx-steps`);
+        const steps = (w.match(/<li>/g) || []).length;
+        assert.ok(steps >= 2, `section ${s.id}: a .wx has ${steps} steps (needs >= 2)`);
+        assert.doesNotMatch(w, THAI_IN_TEXT, `section ${s.id}: Thai inside \\text{} in a worked example`);
+      }
+    }
+    const all = (body.match(/<div class="wx">/g) || []).length;
+    const counted = secs.reduce((k, s) => k + workedBlocks(s.html).length, 0);
+    assert.equal(counted, all, `lec-${id}: a .wx block does not match the markup contract`);
+  });
+}

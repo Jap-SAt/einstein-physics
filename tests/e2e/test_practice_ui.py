@@ -303,4 +303,79 @@ async def test_lecture_card_and_home_badge():
         await s.close()
 
 
+WX_STATE = """() => { const w = document.querySelector('#lec .wx'); const li = [...w.querySelectorAll('.wx-steps > li')];
+  const b = w.querySelector('.wx-next'), c = w.querySelector('.wx-count');
+  return { n: li.length, shown: li.filter(x => x.offsetParent !== null).length,
+    firstHidden: li.findIndex(x => x.offsetParent === null),
+    btn: b ? b.textContent.trim() : null, count: c ? c.textContent.trim() : null,
+    countMono: !!c && c.classList.contains('mono'),
+    intro: (w.querySelector('.wx-intro') || {}).textContent || null,
+    nBtn: w.querySelectorAll('.wx-next').length, nCount: w.querySelectorAll('.wx-count').length,
+    nIntro: w.querySelectorAll('.wx-intro').length }; }"""
+
+
+async def test_worked_stepper():
+    s = await open_page('mech')
+    try:
+        await s.page.wait_for_selector('#lec .wx .wx-next')
+        r = await s.page.evaluate(WX_STATE)
+        n = r['n']
+        assert n >= 2, r
+        assert r['shown'] == 0, r
+        assert r['intro'].strip() == 'ลองคิดเองก่อน แล้วค่อยเปิดทีละขั้น', r
+        assert r['btn'] == 'ดูขั้นต่อไป' and r['count'] == f'ขั้น 0/{n}' and r['countMono'], r
+        nwx = await s.page.evaluate("() => document.querySelectorAll('#lec .wx').length")
+        assert nwx >= 6, nwx
+        # every example on the page starts closed
+        assert await s.page.evaluate("() => [...document.querySelectorAll('#lec .wx-steps > li')].every(x => x.offsetParent === null)")
+        btn = s.page.locator('#lec .wx >> nth=0').locator('.wx-next')
+        for k in range(1, n + 1):
+            await btn.click()
+            r = await s.page.evaluate(WX_STATE)
+            assert r['shown'] == k, (k, r)
+            assert r['firstHidden'] == (k if k < n else -1), (k, r)
+            assert r['count'] == f'ขั้น {k}/{n}', (k, r)
+            if k == 2:
+                assert r['count'] == f'ขั้น 2/{n}', r
+            if k < n:
+                assert r['btn'] == 'ดูขั้นต่อไป', (k, r)
+        assert r['btn'] is None and r['nBtn'] == 0, r
+        # other examples are untouched
+        assert await s.page.evaluate("() => [...document.querySelectorAll('#lec .wx')].slice(1).every(w => w.querySelectorAll('.wx-steps > li:not([hidden])').length === 0)")
+        # enhancing again does not duplicate controls
+        await s.page.evaluate("() => PracticeUI.enhanceWorked(document.getElementById('lec'))")
+        r = await s.page.evaluate(WX_STATE)
+        assert r['nBtn'] == 0 and r['nCount'] == 1 and r['nIntro'] == 1 and r['shown'] == n, r
+        dup = await s.page.evaluate("() => [...document.querySelectorAll('#lec .wx')].slice(1).map(w => [w.querySelectorAll('.wx-next').length, w.querySelectorAll('.wx-count').length, w.querySelectorAll('.wx-intro').length].join())")
+        assert all(d == '1,1,1' for d in dup), dup
+        # MathJax rendered inside the revealed steps
+        await s.page.wait_for_function("() => document.querySelector('#lec .wx .wx-steps mjx-container')", timeout=8000)
+        size = await s.page.evaluate("""() => { const svgs = [...document.querySelectorAll('#lec .wx')[0].querySelectorAll('.wx-steps mjx-container svg')];
+            return svgs.length && svgs.every(x => x.getBoundingClientRect().width > 2 && x.getBoundingClientRect().height > 2); }""")
+        assert size, 'math in revealed steps has no size'
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_worked_mobile_dark_reduced_motion():
+    s = await open_page('mech', viewport=(390, 844), reduced_motion=True)
+    try:
+        await s.page.evaluate("() => Theme.set('dark')")
+        await s.page.wait_for_selector('#lec .wx .wx-next')
+        for _ in range(12):
+            b = s.page.locator('#lec .wx >> nth=-1').locator('.wx-next')
+            if not await b.count():
+                break
+            await b.click()
+        assert await s.page.locator('#lec .wx >> nth=-1').locator('.wx-next').count() == 0
+        r = await s.page.evaluate("""() => { const li = document.querySelectorAll('#lec .wx')[document.querySelectorAll('#lec .wx').length - 1].querySelector('.wx-steps > li');
+            return { anim: getComputedStyle(li).animationName, noScroll: document.documentElement.scrollWidth <= window.innerWidth }; }""")
+        assert r['anim'] == 'none', r
+        assert r['noScroll'], r
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())

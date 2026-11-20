@@ -132,6 +132,7 @@ function renderLecture(tv, m) {
     es.forEach(en => { if (en.isIntersecting) document.querySelectorAll('#tocl a').forEach(a => a.classList.toggle('on', a.dataset.t === en.target.id)); });
   }, { rootMargin: '-20% 0px -70% 0px' });
   hs.forEach(h => lecObs.observe(h));
+  if (typeof PracticeUI !== 'undefined') PracticeUI.enhanceWorked(art);
   typeset(art);
 }
 window.addEventListener('scroll', () => {

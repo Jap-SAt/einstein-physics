@@ -90,6 +90,23 @@ details.ex summary::-webkit-details-marker{display:none}
 details.ex summary::before{content:'＋';color:var(--macc);font-weight:600}
 details.ex[open] summary::before{content:'－'}
 details.ex .sol{padding:0 18px 14px 44px;color:var(--text2)}
+/* worked example, revealed one step at a time (PracticeUI.enhanceWorked) */
+.wx{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:24px 0;padding:16px 20px;font-size:16px;line-height:1.8;overflow-wrap:anywhere}
+.wx-q{font-weight:500}
+.wx-q::before{content:'ตัวอย่าง';display:block;font-size:11.5px;font-weight:600;letter-spacing:.07em;color:var(--macc);margin-bottom:2px}
+.lec .wx-intro{margin:6px 0 0;font-size:14px;color:var(--muted)}
+.lec .wx-steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:wx}
+.lec .wx-steps>li{counter-increment:wx;margin:0;padding:10px 0 4px;border-top:1px dashed var(--line);color:var(--text2)}
+.lec .wx-steps>li[hidden]{display:none}
+.wx-steps>li::before{content:'ขั้นที่ ' counter(wx);display:block;font-size:12px;font-weight:600;color:var(--macc);letter-spacing:.02em}
+.wx-steps>li:focus{outline:none}
+.wx-steps b{font-weight:600;color:var(--ink)}
+.wx-steps>li.wx-in{animation:wxIn .32s ease both}
+@keyframes wxIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.wx-ctrl{display:flex;align-items:center;gap:12px;margin-top:12px}
+.wx-count{margin-left:auto;font-size:13px;color:var(--muted)}
+.wx mjx-container{max-width:100%}
+@media (prefers-reduced-motion:reduce){.wx-steps>li.wx-in{animation:none}}
 table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:14.5px;line-height:1.55;margin:18px 0 24px;background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 .tbl th,.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .tbl tr:last-child td{border-bottom:0}
@@ -252,7 +269,7 @@ body.focus #focusExit{display:inline-flex}
   .sim-wrap{grid-template-columns:1fr;height:auto}
   .sim-stage{height:60vh}
   .sim-panel{border-left:0;border-top:1px solid var(--line)}
-  .lec-grid{grid-template-columns:1fr;padding-top:30px;gap:0}
+  .lec-grid{grid-template-columns:minmax(0,1fr);padding-top:30px;gap:0}
   .toc{display:none}
   .nextcards{grid-template-columns:1fr}
   .qcard{padding:22px}
