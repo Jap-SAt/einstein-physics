@@ -21,6 +21,7 @@ window.addEventListener('themechange', () => {
 
 function route(keepScroll) {
   stopSim();
+  if (cancelRescroll) { cancelRescroll(); cancelRescroll = null; }
   if (lecObs) { lecObs.disconnect(); lecObs = null; }
   const [h, q] = location.hash.slice(1).split('?');   // #<id>?s=<section>: lecture, scrolled to that h2
   const [id, tab] = h.split('-');
@@ -103,7 +104,7 @@ function renderModule(m, tab, sec) {
 }
 
 /* ── lecture ── */
-let lecObs = null;
+let lecObs = null, rescrollT = null, cancelRescroll = null;
 function renderLecture(tv, m, sec) {
   const tpl = document.getElementById('lec-' + m.id);
   tv.innerHTML = `<div class="lec-grid"><aside class="toc"><div class="kicker">ในบทนี้</div><div id="tocl"></div></aside>
@@ -123,7 +124,14 @@ function renderLecture(tv, m, sec) {
   hs.forEach(h => lecObs.observe(h));
   if (typeof PracticeUI !== 'undefined') PracticeUI.enhanceWorked(art);
   typeset(art);
-  if (sec) { goSection(sec); setTimeout(() => goSection(sec), 700); }   // again once MathJax has settled the layout
+  if (sec) {
+    goSection(sec);
+    // again once MathJax has settled the layout, unless the user has moved on or started scrolling
+    const cancel = () => { clearTimeout(rescrollT); rescrollT = null; ['wheel', 'touchstart', 'keydown'].forEach(ev => window.removeEventListener(ev, cancel)); };
+    rescrollT = setTimeout(() => { cancel(); if (location.hash.endsWith('?s=' + sec) && document.getElementById('lec')) goSection(sec); }, 700);
+    ['wheel', 'touchstart', 'keydown'].forEach(ev => window.addEventListener(ev, cancel, { once: true, passive: true }));
+    cancelRescroll = cancel;
+  }
 }
 function goSection(sec) { const h = document.querySelector('#lec #' + sec); if (h) h.scrollIntoView(); }   // h2 has scroll-margin-top (sticky header)
 // a link to the section of the lecture that is already open does not fire hashchange: just scroll

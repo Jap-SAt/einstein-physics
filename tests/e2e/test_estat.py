@@ -733,4 +733,60 @@ async def test_cross_links():
         await s.close()
 
 
+async def follow_particle_link(s):
+    sel = '.lec a[href="#estat?s=s3"]'
+    await s.page.wait_for_selector(sel, state='attached')
+    loc = s.page.locator(sel).first
+    await loc.scroll_into_view_if_needed()
+    await loc.click()
+
+
+async def test_link_then_leave_quickly():
+    s = await open_page('particle')
+    try:
+        await follow_particle_link(s)
+        await s.page.wait_for_timeout(100)
+        await s.page.evaluate("() => { location.hash = '#particle'; }")
+        await s.page.wait_for_timeout(1000)
+        y = await s.page.evaluate("() => scrollY")
+        assert y <= 5, y
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_link_then_user_scroll_not_snapped_back():
+    s = await open_page('particle')
+    try:
+        await follow_particle_link(s)
+        await s.page.wait_for_timeout(100)
+        await s.page.mouse.move(600, 400)
+        await s.page.mouse.wheel(0, 700)
+        await s.page.wait_for_timeout(250)
+        y1 = await s.page.evaluate("() => scrollY")
+        await s.page.wait_for_timeout(1000)
+        y2 = await s.page.evaluate("() => scrollY")
+        assert abs(y2 - y1) <= 5, (y1, y2)
+        st = await section_top(s, 's3')
+        assert abs(st[0]) > 100, st
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_link_then_back():
+    s = await open_page('particle')
+    try:
+        await follow_particle_link(s)
+        await s.page.wait_for_timeout(1000)
+        await s.page.go_back()
+        await s.page.wait_for_timeout(1000)
+        h = await s.page.evaluate("() => location.hash")
+        tab = await s.page.evaluate("() => document.querySelector('.tabs a.on').getAttribute('href')")
+        assert h == '#particle' and tab == '#particle', (h, tab)
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
