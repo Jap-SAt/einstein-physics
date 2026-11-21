@@ -22,6 +22,7 @@ function simEField(host, U) {
   function setView(v) {
     if (v === view) return; view = v; const a = VIEWS[v];
     host.setHome(new THREE.Vector3(a[0] * far, a[1] * far, a[2] * far), new THREE.Vector3(0, 0, a[3]));
+    camera.updateMatrixWorld();
   }
 
   const HALF = 20, PLACE = 18, MAXN = 8, MAXU = 32, QDEF = 2, SNAP = 0.5, R_DRAW = 30;
@@ -42,7 +43,7 @@ function simEField(host, U) {
   const st = {
     charges: saved ? saved.charges.map(c => ({ x: c.x, y: c.y || 0, z: c.z, q: c.q })) : [],
     locked: saved ? !!saved.locked : false,
-    dv: 5e4,
+    dv: saved && saved.dv ? saved.dv : 5e4,
     sel: saved ? saved.sel : -1,
     mode: saved ? saved.mode : 'probe',
     showLines: saved ? saved.showLines : true,
@@ -219,9 +220,9 @@ function simEField(host, U) {
   const ss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   // lines fade with height above/below the floor and with distance, so the plane of the charges stays the focus
   const fadeAt = (x, y, z) => (1 - 0.7 * ss(2.5, 12, Math.abs(y))) * (1 - ss(16, R_DRAW, Math.hypot(x, y, z)));
-  // ΔV per scene: |E| median over a ring zone 1.5–4.5 cm around the charges, × 0.36 cm, nearest 1-2-5 value
-  // (keeps the dipole at 50 kV like before); the plates demo uses 500 kV (~7 contours across the gap)
-  function contourStep() {
+  // Ideal ΔV for the current charges: |E| median over a ring zone 1.5–4.5 cm around the charges, × 0.36 cm
+  // (raw), rounded to the nearest 1-2-5 value (keeps the dipole at 50 kV); the plates demo uses 500 kV.
+  function idealRaw() {
     if (st.locked) return DV_PLATES;
     if (!st.charges.length) return 5e4;
     const E = [];
@@ -233,15 +234,37 @@ function simEField(host, U) {
     }
     if (!E.length) return 5e4;
     E.sort((a, b) => a - b);
-    const t = E[E.length >> 1] * 0.0036;
+    return E[E.length >> 1] * 0.0036;
+  }
+  function contourStep() {
+    const t = idealRaw();
     let best = LADDER[0];
     for (const v of LADDER) if (Math.abs(Math.log(v / t)) < Math.abs(Math.log(best / t))) best = v;
     return best;
   }
   const dvStr = v => v >= 1e6 ? (v / 1e6) + ' MV' : v >= 1e3 ? (v / 1e3) + ' kV' : v + ' V';
+  // ΔV is chosen fresh only for a new scene (preset, or the first charge placed into an empty scene) and then
+  // held fixed, so a stronger charge visibly packs its equipotentials closer together. It is re-picked only
+  // when the ideal step drifts more than DV_BAND× away (contours would merge into the fade near the charges,
+  // or almost none would be left); the hysteresis band means ordinary q edits and drags never change it.
+  const DV_BAND = 3.5;
+  let dvFresh = !(saved && saved.dv), dvFlashTimer = 0;
   function syncStep() {
-    st.dv = contourStep(); floorMat.uniforms.uStep.value = st.dv / KV;
-    if (dvEl) dvEl.textContent = dvStr(st.dv);
+    if (!st.charges.length && !st.locked) { dvFresh = true; return; }     // empty: keep showing the last ΔV
+    const t = idealRaw();
+    let next = st.dv, flash = false;
+    if (dvFresh) { next = contourStep(); dvFresh = false; }
+    else if (!st.locked && (t > DV_BAND * st.dv || t < st.dv / DV_BAND)) { next = contourStep(); flash = next !== st.dv; }
+    setDv(next, flash);
+  }
+  function setDv(v, flash) {
+    st.dv = v; floorMat.uniforms.uStep.value = v / KV;
+    if (!dvEl) return;
+    dvEl.textContent = dvStr(v);
+    if (flash) {
+      dvEl.classList.add('flash'); clearTimeout(dvFlashTimer);
+      dvFlashTimer = setTimeout(() => dvEl.classList.remove('flash'), 2500);
+    }
   }
 
   // arrowheads: candidates from the last build; the ones pointing (almost) at the camera look like dots
@@ -351,7 +374,7 @@ function simEField(host, U) {
   };
   function preset(name) {
     if (!PRESETS[name]) return;
-    st.locked = name === 'plates';
+    st.locked = name === 'plates'; dvFresh = true;
     st.charges = PRESETS[name]().map(c => ({ x: c.x, y: c.y || 0, z: c.z, q: c.q }));
     st.sel = -1; stopTest(); changed(false);
     if (st.locked) { st.probe = { x: 0, z: 0 }; readProbe(); }
@@ -564,14 +587,15 @@ function simEField(host, U) {
 
   /* ── test hook ── */
   const project = (x, z, y) => {
+    camera.updateMatrixWorld(); world.updateMatrixWorld();
     const v = world.localToWorld(new THREE.Vector3(x, y || 0, z)).project(camera), r = canvas.getBoundingClientRect();
     return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, ndc: v };
   };
   // render only the floor (contours on/off) to a render target and read the pixels at floor points
-  function floorRead(pts, contours) {
+  function floorRead(pts, contours, full) {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const rt = new THREE.WebGLRenderTarget(size.x, size.y);
-    const hide = [lines, arrows, chargeGroup, plateGroup, ring, probeArrow, probeDot, tcMesh, trail, grid, selLabel].filter(Boolean);
+    const hide = full ? [] : [lines, arrows, chargeGroup, plateGroup, ring, probeArrow, probeDot, tcMesh, trail, grid, selLabel].filter(Boolean);
     const vis = hide.map(o => o.visible); hide.forEach(o => { o.visible = false; });
     const fv = floor.visible; floor.visible = true; floorMat.uniforms.uContour.value = contours ? 1 : 0;
     renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null);
@@ -592,6 +616,8 @@ function simEField(host, U) {
     locked: () => st.locked,
     plateNormal: () => [0, 1],                         // plates demo: sheets at z = ∓2, normal along +z
     contourStep: () => st.dv,
+    idealStep: () => contourStep(),
+    dvFlashed: () => !!(dvEl && dvEl.classList.contains('flash')),
     pickAt: (x, y, type) => pickAt(x, y, type),
     setCamera(x, y, z) { camera.position.set(x, y, z); controls.update(); },
     arrowStats() {
@@ -606,9 +632,9 @@ function simEField(host, U) {
       return { all: arrowN, shown: arrows.count, facing: face };
     },
     _arrows: () => arrows,
-    floorLine(x0, z0, x1, z1, n) {
+    floorLine(x0, z0, x1, z1, n, full) {
       const pts = []; for (let k = 0; k < n; k++) { const t = k / (n - 1); pts.push([x0 + (x1 - x0) * t, z0 + (z1 - z0) * t]); }
-      return { on: floorRead(pts, true), off: floorRead(pts, false) };
+      return { on: floorRead(pts, true, full), off: floorRead(pts, false, full) };
     },
     lines: () => traced.map(L => { const p = L.points, n = p.length; return { from: L.from, to: L.to, n: n / 3, first: [p[0], p[1], p[2]], last: [p[n - 3], p[n - 2], p[n - 1]] }; }),
     readout(x, z) { setProbe({ x, z }); return Object.assign({}, lastRead); },
@@ -625,6 +651,7 @@ function simEField(host, U) {
     frames: () => frames,
     screenOf(i) { const c = st.charges[i]; return c ? project(c.x, c.z, c.y) : null; },
     screenOfPoint: (x, z) => project(x, z),
+    screenOfPointFresh(x, z) { camera.updateMatrixWorld(); camera.updateProjectionMatrix(); return project(x, z); },
     floorColors: () => [hex(pal().neutral), hex(pal().warm), hex(pal().cool), floorMat.uniforms.uNeutral.value.getHexString()],
     floorPixel(x, z) { const r = floorRead([[x, z]], false)[0]; return r; }
   };
@@ -632,7 +659,7 @@ function simEField(host, U) {
   return {
     toggle() { st.play = !st.play; return st.play; },
     dispose() {
-      fullDone = true; dirtyFast = false; endDrag(); clearTimeout(msgTimer);   // no full re-trace while leaving
+      fullDone = true; dirtyFast = false; endDrag(); clearTimeout(msgTimer); clearTimeout(dvFlashTimer);   // no full re-trace while leaving
       canvas.removeEventListener('pointerdown', onDown, true);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
@@ -641,7 +668,7 @@ function simEField(host, U) {
       canvas.removeEventListener('pointerleave', onLeave);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('themechange', applyTheme);
-      simEField.saved = { charges: st.charges.map(c => ({ x: c.x, y: c.y, z: c.z, q: c.q })), locked: st.locked, sel: st.sel, mode: st.mode, showLines: st.showLines, showFloor: st.showFloor, probe: { x: st.probe.x, z: st.probe.z } };
+      simEField.saved = { charges: st.charges.map(c => ({ x: c.x, y: c.y, z: c.z, q: c.q })), locked: st.locked, dv: st.dv, sel: st.sel, mode: st.mode, showLines: st.showLines, showFloor: st.showFloor, probe: { x: st.probe.x, z: st.probe.z } };
       // everything still in the scene is freed by host.dispose(); free what may not be attached
       Object.values(glyphs).forEach(t => t.dispose());
       arrows.dispose(); ballGeo.dispose(); coneGeo.dispose(); lines.geometry.dispose(); tg.dispose();

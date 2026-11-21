@@ -378,3 +378,6 @@ html.dark .ef-msg.warn{color:#f0a070}
 .ef-sel .mono{font-size:12.5px;color:var(--ink)}
 .chips button:disabled{opacity:.45;cursor:default;border-color:var(--line);color:var(--muted)}
 input[type=range]:disabled{opacity:.45}
+.ef-dv{border-radius:5px;padding:0 3px;transition:background-color .4s,color .4s}
+.ef-dv.flash{background:#f6d58a;color:#17191e}
+html.dark .ef-dv.flash{background:#8a6a1e;color:#fff}

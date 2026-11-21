@@ -451,6 +451,10 @@ async def test_contour_step_per_scene():
         assert any(ch.isdigit() for ch in r['note']) and 'V' in r['note'], r['note']
         cx = crossings(r['line']['on'], r['line']['off'])
         assert cx >= 4, ('visible contours across the gap', cx)
+        # same line in the full scene (lines, arrows, charges drawn): contours must not be buried
+        full = await s.page.evaluate("(n) => __ef.floorLine(0.75 * n[0] - 1.9 * n[0], -1.9 * n[1], 0.75 + 1.9 * n[0], 1.9 * n[1], 240, true)", r['nrm'])
+        fx = crossings(full['on'], full['off'])
+        assert fx >= 4, ('contours visible in the full scene', fx)
         d = await s.page.evaluate("""() => { __ef.preset('dipole');
             return { dv: __ef.contourStep(), note: document.querySelector('#panel .ef-dv').textContent,
                      line: __ef.floorLine(-3, 4, 3, 4, 240) }; }""")
@@ -499,6 +503,46 @@ async def test_dispose_frees_arrows():
         await s.page.evaluate("() => { location.hash = '#estat'; }")
         await s.page.wait_for_timeout(300)
         assert await s.page.evaluate("() => window.__arrowDisposed") >= 1
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+
+# ───────────── Task 3 review fixes, round 2 ─────────────
+
+async def test_contour_step_stable_under_edits():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('dipole');
+            const dv0 = __ef.contourStep(), line0 = __ef.floorLine(-3, 4, 3, 4, 300);
+            __ef.setQ(0, 3);
+            const dv1 = __ef.contourStep(), line1 = __ef.floorLine(-3, 4, 3, 4, 300), fl1 = __ef.dvFlashed();
+            __ef.setQ(0, 5);
+            const dv2 = __ef.contourStep(), fl2 = __ef.dvFlashed();
+            return { dv0, dv1, dv2, fl1, fl2, line0, line1 }; }""")
+        assert r['dv1'] == r['dv0'], ('ΔV kept when q goes 2 → 3 µC', r['dv0'], r['dv1'])
+        assert not r['fl1']
+        c0, c1 = crossings(r['line0']['on'], r['line0']['off']), crossings(r['line1']['on'], r['line1']['off'])
+        assert c1 > c0, ('stronger charge → more (closer) contours', c0, c1)
+        assert r['dv2'] == r['dv0'] or r['fl2'], ('ΔV kept at 5 µC, or stepped with the note highlighted', r)
+        r2 = await s.page.evaluate("""() => { __ef.preset('plates'); const a = __ef.contourStep();
+            __ef.preset('clear'); __ef.place(2, 2, 1);
+            return { a, b: __ef.contourStep(), ideal: __ef.idealStep(), note: document.querySelector('#panel .ef-dv').textContent }; }""")
+        assert r2['a'] != r2['b'] and r2['b'] == r2['ideal'], ('fresh ΔV after clear + first placement', r2)
+        assert r2['note'].replace(' ', '').startswith(str(int(r2['b'] / 1000))), r2
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_projection_fresh_after_preset():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('plates');
+            const a = __ef.screenOfPoint(0, 0); const i = __ef.charges().length - 1; const b = __ef.screenOf(i);
+            return { a, b, ref: __ef.screenOfPointFresh(0, 0) }; }""")
+        assert abs(r['a']['x'] - r['ref']['x']) < 0.5 and abs(r['a']['y'] - r['ref']['y']) < 0.5, r
         assert not s.errors, s.errors
     finally:
         await s.close()
