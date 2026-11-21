@@ -600,4 +600,27 @@ async def test_lecture_content():
         await s.close()
 
 
+async def test_lecture_chapter_numbers_match_mods():
+    """Every "บทที่ NN" in any lecture template names its chapter right after the number, and NN is that chapter's MODS.no."""
+    s = await open_page('home')
+    try:
+        r = await s.page.evaluate("""() => {
+            const out = [];
+            for (const t of document.querySelectorAll('template[id^="lec-"]')) {
+                const txt = t.content.textContent.replace(/\\s+/g, ' ');
+                for (const m of txt.matchAll(/บทที่ (\\d+)/g)) {
+                    const after = txt.slice(m.index + m[0].length, m.index + m[0].length + 40).trim();
+                    const mod = MODS.find(x => after.startsWith(x.title) || after.startsWith(x.short));
+                    out.push({ lec: t.id, no: m[1], after: after.slice(0, 25), modNo: mod ? mod.no : null });
+                }
+            }
+            return out; }""")
+        assert r, 'expected at least one chapter-number mention'
+        bad = [x for x in r if x['modNo'] != x['no']]
+        assert not bad, bad
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
