@@ -840,6 +840,8 @@ async def test_zero_contour_not_heavier_and_legend():
         assert zero_peak <= 0.8 * other_peak, ('V = 0 contour lighter than ordinary', zero_peak, other_peak)
         txt = await s.page.inner_text('#panel .ef-legend')
         assert 'V = 0' in txt and 'เส้นศักย์เท่า' in txt, txt
+        # V = 0 is midway only for equal and opposite charges: the legend must say so, not claim it in general
+        assert 'อยู่กึ่งกลางระหว่าง + กับ −' not in txt and 'เท่ากันและตรงข้าม' in txt, txt
         assert not s.errors, s.errors
     finally:
         await s.close()
