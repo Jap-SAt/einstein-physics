@@ -2,7 +2,7 @@
 :root{
   --bg:#f6f5f1; --ink:#17191e; --muted:#656973; --line:#e4e1d9; --card:#fff; --soft:#efede7;
   --a1:#3a5bd9; --a1s:#e8eefc; --a2:#cf5f2a; --a2s:#fcede4; --a3:#6a4cd6; --a3s:#eeeafc; --a4:#2b8a4e; --a4s:#e5f3ea;
-  --a5:#0f8486; --a5s:#e1f2f1; --a6:#c0396b; --a6s:#fbe8ef; --a7:#1f7fb8; --a7s:#e3f1fa;
+  --a5:#0f8486; --a5s:#e1f2f1; --a6:#c0396b; --a6s:#fbe8ef; --a7:#1f7fb8; --a7s:#e3f1fa; --a8:#a8760a; --a8s:#f8efd6;
   --card:#fff; --text2:#3a3e47; --stage:#fbfaf7; --topbar:rgba(255,255,255,.94); --tabbg:rgba(255,255,255,.6);
   --macc:var(--ink); --msoft:var(--soft);
 }
@@ -11,7 +11,7 @@ html.dark{
   --bg:#0c0d10; --ink:#ecE9e2; --muted:#9b9da6; --line:#25272d; --soft:#1c1e23;
   --card:#14151a; --text2:#c8c5bd; --stage:#0f1013; --topbar:rgba(12,13,16,.88); --tabbg:rgba(255,255,255,.05);
   --a1:#86a0ff; --a1s:#18203d; --a2:#ff9b60; --a2s:#33200f; --a3:#ab92ff; --a3s:#221b42; --a4:#5ccb8b; --a4s:#122c1d;
-  --a5:#4fd1c5; --a5s:#0e2a29; --a6:#f27fa9; --a6s:#351624; --a7:#6cc3f5; --a7s:#0f2638;
+  --a5:#4fd1c5; --a5s:#0e2a29; --a6:#f27fa9; --a6s:#351624; --a7:#6cc3f5; --a7s:#0f2638; --a8:#e8bd48; --a8s:#2d2410;
 }
 html.dark body{transition:background .6s ease,color .6s ease}
 *{box-sizing:border-box}

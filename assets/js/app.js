@@ -57,7 +57,7 @@ function renderHome() {
         <h1>เห็นฟิสิกส์<br>ก่อน<span class="soft">จำสูตร</span></h1>
         <button class="atom-btn" id="heroAtom" aria-label="คลิกเพื่อย้อนชมกำเนิดจักรวาล" title="คลิกเพื่อย้อนชมกำเนิดจักรวาล"><span class="atom-tip">คลิกเพื่อย้อนสู่กำเนิดจักรวาล</span></button>
       </div>
-      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน และคลื่น แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้วฝึกทำโจทย์ทีละระดับด้วยแบบฝึกหัด</p>
+      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน คลื่น และไฟฟ้าสถิต แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้วฝึกทำโจทย์ทีละระดับด้วยแบบฝึกหัด</p>
       <div class="flex flex-wrap gap-3 mt-8">
         <a class="btn btn-primary" href="#mech">เริ่มบทที่ 1</a>
         <a class="btn btn-ghost" href="#atom-sim">ลองการจำลองอะตอม</a>
@@ -111,7 +111,7 @@ function renderLecture(tv, m) {
   art.appendChild(tpl.content.cloneNode(true));
   art.insertAdjacentHTML('beforeend', `<div class="nextcards">
      <a href="#${m.id}-sim"><b>ลองในการจำลอง 3D →</b><span>ปรับค่าเองแล้วสังเกตผล</span></a>
-     <a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}</span></a></div>`);
+     <a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>${(PRACTICE[m.id] || []).length ? `แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}` : 'กำลังจัดทำ'}</span></a></div>`);
   const hs = [...art.querySelectorAll('h2')];
   $('#tocl').innerHTML = hs.map(h => `<a role="button" tabindex="0" data-t="${h.id}">${h.textContent.replace(/^\d+/, '')}</a>`).join('');
   $('#tocl').onclick = e => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.t).scrollIntoView({ behavior: 'smooth' }); };
@@ -131,7 +131,7 @@ window.addEventListener('scroll', () => {
 
 /* ── simulation page ── */
 const SIMS = {
-  mech: () => simProjectile, thermo: () => simGas, waves: () => simRipple,
+  mech: () => simProjectile, thermo: () => simGas, waves: () => simRipple, estat: () => simEField,
   particle: () => simParticle, em: () => simEM, atom: () => simAtom, nuclear: () => simNuclear
 };
 function renderSim(tv, m) {
