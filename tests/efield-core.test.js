@@ -49,12 +49,14 @@ test('field at a charge is finite', () => {
 
 test('dipole lines start at + and end at -', () => {
   const cs = [{ x: -4, y: 0, z: 0, q: 2 }, { x: 4, y: 0, z: 0, q: -2 }];
-  const lines = EField.traceLines(cs, {});
-  assert.ok(lines.length > 0);
+  const all = EField.traceLines(cs, {});
+  assert.ok(all.length > 0);
+  // lines from the negative are only the owed ones from infinity (to = -1)
+  for (const l of all) if (l.from === 1) assert.equal(l.to, -1);
+  const lines = all.filter((l) => l.from === 0);
   let ended = 0;
-  for (const l of lines) {
-    assert.equal(l.from, 0);
-    if (l.to === 1) ended++;
+  for (const l of all) {
+    if (l.to === 1 && l.from === 0) ended++;
     for (let i = 0; i < l.points.length; i++) assert.ok(Number.isFinite(l.points[i]));
   }
   assert.ok(ended >= 0.8 * lines.length, `${ended}/${lines.length}`);
@@ -89,4 +91,44 @@ test('isWithin', () => {
   const cs = [{ x: 0, y: 0, z: 0, q: 1 }];
   assert.equal(EField.isWithin({ x: 1, y: 0, z: 0 }, cs, 2), true);
   assert.equal(EField.isWithin({ x: 3, y: 0, z: 0 }, cs, 2), false);
+});
+
+test('lines density at a stronger negative is proportional to |q|', () => {
+  const cs = [{ x: -4, y: 0, z: 0, q: 1 }, { x: 4, y: 0, z: 0, q: -3 }];
+  const lines = EField.traceLines(cs, {});
+  const plus = lines.filter((l) => l.from === 0).length;
+  const touching = lines.filter((l) => l.to === 1 || l.from === 1).length;
+  assert.ok(Math.abs(touching - 3 * plus) <= 1, `${touching} vs 3*${plus}`);
+  for (const l of lines) for (let i = 0; i < l.points.length; i++) assert.ok(Number.isFinite(l.points[i]));
+});
+
+test('pure dipole gains no duplicate lines', () => {
+  const cs = [{ x: -4, y: 0, z: 0, q: 1 }, { x: 4, y: 0, z: 0, q: -1 }];
+  const lines = EField.traceLines(cs, {});
+  assert.equal(lines.filter((l) => l.from === 0).length, 8);
+  const touching = lines.filter((l) => l.to === 1 || l.from === 1).length;
+  assert.ok(Math.abs(touching - 8) <= 1, `${touching}`);
+  // extra lines from the negative must come from infinity, never retrace a + line
+  for (const l of lines) if (l.from === 1) assert.equal(l.to, -1);
+});
+
+test('no degenerate lines', () => {
+  const sets = [
+    [{ x: 0, y: 0, z: 0, q: 1 }, { x: 0, y: 0, z: 0, q: -1 }],
+    [{ x: 100, y: 0, z: 0, q: 1 }],
+    [{ x: 0, y: 0, z: 0, q: 1 }, { x: 5, y: 0, z: 0, q: -1 }]
+  ];
+  for (const cs of sets) for (const l of EField.traceLines(cs, {})) assert.ok(l.points.length >= 6);
+});
+
+test('tiny charge still gets a line', () => {
+  assert.ok(EField.traceLines([{ x: 0, y: 0, z: 0, q: 0.05 }], {}).length >= 1);
+});
+
+test('fieldInto equals field', () => {
+  const cs = [{ x: -4, y: 1, z: 0, q: 2 }, { x: 4, y: 0, z: 2, q: -1 }];
+  const p = { x: 1, y: 2, z: 3 }, out = [0, 0, 0];
+  const E = EField.field(cs, p);
+  const m = EField.fieldInto(cs, p.x, p.y, p.z, out);
+  assert.equal(m, E.mag); assert.equal(out[0], E.x); assert.equal(out[1], E.y); assert.equal(out[2], E.z);
 });

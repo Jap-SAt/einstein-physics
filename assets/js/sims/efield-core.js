@@ -1,5 +1,6 @@
 /* EField — pure electrostatics maths for the 3D field simulation.
  * Units: positions in scene units (1 unit = 1 cm = 0.01 m), charges in µC, outputs SI (N/C, V).
+ * fieldInto(charges, x, y, z, out): allocation-free field(); writes Ex,Ey,Ez (N/C) into out[0..2], returns |E|.
  * Works as a browser classic script (global EField) and in Node (module.exports). */
 var EField = (function () {
   var K = 9.0e9;
@@ -77,55 +78,97 @@ var EField = (function () {
     var n = charges.length;
     if (!n) return lines;
 
-    var hasPos = false, i;
-    for (i = 0; i < n; i++) if (charges[i].q > 0) { hasPos = true; break; }
-    var sign = hasPos ? 1 : -1;      // follow +E from positives, else -E from negatives
     var seedR = R_MIN * 1.2;
     var bound2 = bound * bound;
     var buf = new Float32Array((maxSteps + 1) * 3);
     var k1 = [0, 0, 0], k2 = [0, 0, 0], k3 = [0, 0, 0], k4 = [0, 0, 0];
     var GA = Math.PI * (3 - Math.sqrt(5));
+    var i, j;
+
+    function owedCount(c) {
+      return c.q === 0 ? 0 : Math.max(1, Math.round(perUnit * Math.abs(c.q)));
+    }
+
+    // Trace seed s of m (Fibonacci sphere) around charges[i] along sign*E.
+    // Returns {points, from, to} or null for a degenerate (<2 point) line.
+    function traceOne(i, s, m, sign) {
+      var c = charges[i];
+      var yy = m === 1 ? 0 : 1 - 2 * (s + 0.5) / m;
+      var rr = Math.sqrt(Math.max(0, 1 - yy * yy));
+      var th = GA * s;
+      var x = c.x + seedR * rr * Math.cos(th);
+      var y = c.y + seedR * yy;
+      var z = c.z + seedR * rr * Math.sin(th);
+      var np = 1, to = -1;
+      buf[0] = x; buf[1] = y; buf[2] = z;
+      for (var st = 0; st < maxSteps; st++) {
+        if (!dirInto(charges, x, y, z, sign, k1)) break;
+        var h = step;
+        if (!dirInto(charges, x + 0.5 * h * k1[0], y + 0.5 * h * k1[1], z + 0.5 * h * k1[2], sign, k2)) break;
+        if (!dirInto(charges, x + 0.5 * h * k2[0], y + 0.5 * h * k2[1], z + 0.5 * h * k2[2], sign, k3)) break;
+        if (!dirInto(charges, x + h * k3[0], y + h * k3[1], z + h * k3[2], sign, k4)) break;
+        x += h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+        y += h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+        z += h / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
+        buf[np * 3] = x; buf[np * 3 + 1] = y; buf[np * 3 + 2] = z; np++;
+        var hit = -1;
+        for (var j = 0; j < n; j++) {
+          if (charges[j].q * sign >= 0) continue;
+          var dx = x - charges[j].x, dy = y - charges[j].y, dz = z - charges[j].z;
+          if (dx * dx + dy * dy + dz * dz <= R_MIN * R_MIN) { hit = j; break; }
+        }
+        if (hit >= 0) { to = hit; break; }
+        if (x * x + y * y + z * z > bound2) break;
+      }
+      if (np < 2) return null;
+      return { points: buf.slice(0, np * 3), from: i, to: to };
+    }
+
+    var hasPos = false, hasNeg = false;
+    for (i = 0; i < n; i++) { if (charges[i].q > 0) hasPos = true; else if (charges[i].q < 0) hasNeg = true; }
+    if (!hasPos && !hasNeg) return lines;
+
+    var arrivals = new Array(n);
+    for (i = 0; i < n; i++) arrivals[i] = 0;
+
+    if (hasPos) {
+      for (i = 0; i < n; i++) {
+        if (charges[i].q <= 0) continue;
+        var cnt = owedCount(charges[i]);
+        for (var s = 0; s < cnt; s++) {
+          var L = traceOne(i, s, cnt, 1);
+          if (!L) continue;
+          lines.push(L);
+          if (L.to >= 0) arrivals[L.to]++;
+        }
+      }
+    }
+    if (!hasNeg) return lines;
 
     for (i = 0; i < n; i++) {
-      var c = charges[i];
-      if (c.q * sign <= 0) continue;
-      var count = Math.round(perUnit * Math.abs(c.q));
-      for (var s = 0; s < count; s++) {
-        // Fibonacci sphere seed
-        var yy = count === 1 ? 0 : 1 - 2 * (s + 0.5) / count;
-        var rr = Math.sqrt(Math.max(0, 1 - yy * yy));
-        var th = GA * s;
-        var x = c.x + seedR * rr * Math.cos(th);
-        var y = c.y + seedR * yy;
-        var z = c.z + seedR * rr * Math.sin(th);
-        var np = 0, to = -1;
-        buf[0] = x; buf[1] = y; buf[2] = z; np = 1;
-        for (var st = 0; st < maxSteps; st++) {
-          if (!dirInto(charges, x, y, z, sign, k1)) break;
-          var h = step;
-          if (!dirInto(charges, x + 0.5 * h * k1[0], y + 0.5 * h * k1[1], z + 0.5 * h * k1[2], sign, k2)) break;
-          if (!dirInto(charges, x + 0.5 * h * k2[0], y + 0.5 * h * k2[1], z + 0.5 * h * k2[2], sign, k3)) break;
-          if (!dirInto(charges, x + h * k3[0], y + h * k3[1], z + h * k3[2], sign, k4)) break;
-          x += h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
-          y += h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
-          z += h / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
-          buf[np * 3] = x; buf[np * 3 + 1] = y; buf[np * 3 + 2] = z; np++;
-          // end on an opposite-sign charge
-          var hit = -1;
-          for (var j = 0; j < n; j++) {
-            if (charges[j].q * sign >= 0) continue;
-            var dx = x - charges[j].x, dy = y - charges[j].y, dz = z - charges[j].z;
-            if (dx * dx + dy * dy + dz * dz <= R_MIN * R_MIN) { hit = j; break; }
-          }
-          if (hit >= 0) { to = hit; break; }
-          if (x * x + y * y + z * z > bound2) break;
-        }
-        lines.push({ points: buf.slice(0, np * 3), from: i, to: to });
+      if (charges[i].q >= 0) continue;
+      var owed = owedCount(charges[i]);
+      if (!hasPos) {
+        // only negatives: every line is traced outward along -E
+        for (j = 0; j < owed; j++) { var L0 = traceOne(i, j, owed, -1); if (L0) lines.push(L0); }
+        continue;
       }
+      var extra = owed - arrivals[i];
+      if (extra <= 0) continue;
+      // The surplus lines come from infinity (or from far charges). Over-sample candidate
+      // seeds, discard those that only retrace a line already arriving from a + charge,
+      // then keep an even subset of `extra`.
+      var M = owed * 4, cand = [];
+      for (j = 0; j < M; j++) {
+        var Lc = traceOne(i, j, M, -1);
+        if (Lc && Lc.to < 0) cand.push(Lc);
+      }
+      if (cand.length <= extra) { for (j = 0; j < cand.length; j++) lines.push(cand[j]); }
+      else for (j = 0; j < extra; j++) lines.push(cand[Math.floor((j + 0.5) * cand.length / extra)]);
     }
     return lines;
   }
 
-  return { K: K, R_MIN: R_MIN, field: field, potential: potential, traceLines: traceLines, isWithin: isWithin };
+  return { K: K, R_MIN: R_MIN, field: field, fieldInto: fieldInto, potential: potential, traceLines: traceLines, isWithin: isWithin };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = EField;
