@@ -74,7 +74,14 @@ var PracticeUI = (function () {
 
   /* ════════ level map ════════ */
   function render(tv, m) {
-    cur = { m: m, tv: tv, items: PRACTICE[m.id], session: null, inst: null, st: null, el: null };
+    var data = PRACTICE[m.id];
+    if (!data || !data.length) {
+      if (cur) newScreen();
+      cur = { m: m, tv: tv, items: [], session: null, inst: null, st: null, el: null };
+      tv.innerHTML = '<div class="wrap py-16"><p class="text-[16px]" style="color:var(--muted)">แบบฝึกหัดบทนี้กำลังจัดทำ</p></div>';
+      return;
+    }
+    cur = { m: m, tv: tv, items: data, session: null, inst: null, st: null, el: null };
     showMap();
   }
 
