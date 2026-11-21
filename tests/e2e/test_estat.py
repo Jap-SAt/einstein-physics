@@ -548,4 +548,56 @@ async def test_projection_fresh_after_preset():
         await s.close()
 
 
+async def test_lecture_content():
+    """Task 4: the full lecture — five sections, each with a worked example (>= 2 steps), misconception boxes,
+    end card, sim link, s4 energy gain qV + eV, s5 C = eps0 A/d, no Thai inside \\text{}, MathJax clean,
+    and every worked example fully opened fits a 390 px phone."""
+    s = await open_page('estat', viewport=(390, 844))
+    try:
+        await s.page.wait_for_selector('#lec .wx .wx-next')
+        raw = await s.page.evaluate("() => document.getElementById('lec-estat').innerHTML")
+        assert 'กำลังจัดทำ' not in raw, 'placeholder text left'
+        assert 'qV' in raw and '\\varepsilon_0' in raw, 'qV / varepsilon_0 missing'
+        assert 'อิเล็กตรอนโวลต์' in raw and '\\text{eV}' in raw, 'eV not defined'
+        import re
+        bad = re.findall(r'\\text\{[^}]*[\u0E00-\u0E7F][^}]*\}', raw)
+        assert not bad, bad
+        assert 'details class="ex"' not in raw and '<details' not in raw, 'details.ex left'
+        r = await s.page.evaluate("""() => {
+            const lec = document.querySelector('#lec'); const out = []; let cur = null;
+            for (const el of lec.querySelectorAll('h2, .wx, .check')) {
+                if (el.tagName === 'H2') { cur = { id: el.id, wx: [], check: 0 }; out.push(cur); }
+                else if (cur && el.classList.contains('wx')) cur.wx.push(el.querySelectorAll('.wx-steps > li').length);
+                else if (cur) cur.check++;
+            }
+            return { secs: out, sum: !!lec.querySelector('.sumbox'), sim: !!lec.querySelector('a.try[href="#estat-sim"]') }; }""")
+        assert [x['id'] for x in r['secs']] == ['s1', 's2', 's3', 's4', 's5'], r
+        for sec in r['secs']:
+            assert sec['wx'] and all(n >= 2 for n in sec['wx']), sec
+            assert sec['check'] >= 1, sec
+        assert r['sum'] and r['sim'], r
+        n = await s.page.locator('#lec .wx').count()
+        for i in range(n):
+            wx = s.page.locator('#lec .wx').nth(i)
+            for _ in range(12):
+                if not await wx.locator('.wx-next').count():
+                    break
+                await wx.locator('.wx-next').click()
+            assert await wx.locator('.wx-next').count() == 0, i
+        await s.page.evaluate("() => (window.MathJax && MathJax.startup && MathJax.startup.promise) || null")
+        await s.page.wait_for_timeout(800)
+        m = await s.page.evaluate("""() => ({
+            sw: document.documentElement.scrollWidth, vw: window.innerWidth,
+            merr: document.querySelectorAll('#lec mjx-merror, #lec [data-mjx-error]').length,
+            raw: (document.querySelector('#lec').innerText.match(/\\\\[(\\[]/g) || []).length,
+            hidden: document.querySelectorAll('#lec .wx-steps > li[hidden]').length,
+            wide: [...document.querySelectorAll('#lec mjx-container')]
+                .filter(x => x.getBoundingClientRect().right > window.innerWidth + 0.5).map(x => x.textContent.slice(0, 40)) })""")
+        assert m['hidden'] == 0 and m['merr'] == 0 and m['raw'] == 0, m
+        assert m['sw'] <= 390 and not m['wide'], m
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
