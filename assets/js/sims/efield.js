@@ -96,9 +96,12 @@ function simEField(host, U) {
           float f = s / uStep;
           float w = max(fwidth(f), 1e-6);
           float d = abs(fract(f + 0.5) - 0.5);
-          float line = 1.0 - smoothstep(0.45 * w, 1.5 * w, d);
+          // the V = 0 contour (|f| < 0.5) is drawn thinner and fainter so it reads as one equipotential among
+          // the others and not as an axis or a wall
+          float zero = 1.0 - step(0.5, abs(f));
+          float line = 1.0 - smoothstep(0.45 * w * mix(1.0, 0.5, zero), 1.5 * w * mix(1.0, 0.5, zero), d);
           float fade = 1.0 - smoothstep(0.14, 0.3, w);   // contours closer than ~4–7 px fade out
-          col = mix(col, uInk, line * fade * uInkA);
+          col = mix(col, uInk, line * fade * uInkA * mix(1.0, 0.45, zero));
         }
         float e = max(abs(vP.x), abs(vP.y));
         gl_FragColor = vec4(col, uAlpha * (1.0 - smoothstep(uHalf - 2.5, uHalf, e)));
@@ -252,6 +255,7 @@ function simEField(host, U) {
   function syncStep() {
     if (!st.charges.length && !st.locked) { dvFresh = true; return; }     // empty: keep showing the last ΔV
     const t = idealRaw();
+    if (t === 0 && !st.locked) return;   // only 0 µC charges: no field to size ΔV from, so keep it (no re-pick, no flash)
     let next = st.dv, flash = false;
     if (dvFresh) { next = contourStep(); dvFresh = false; }
     else if (!st.locked && (t > DV_BAND * st.dv || t < st.dv / DV_BAND)) { next = contourStep(); flash = next !== st.dv; }
@@ -397,7 +401,8 @@ function simEField(host, U) {
     probeDot.position.set(x, 0.12, z);
     let E = 0, V = 0, onCharge = false;
     if (st.charges.length) {
-      if (EField.isWithin(p, st.charges, EField.R_MIN)) onCharge = true;
+      // a 0 µC charge makes no field or potential, so sitting on it is not "undefined"
+      if (EField.isWithin(p, st.charges.filter(c => c.q !== 0), EField.R_MIN)) onCharge = true;
       else { E = EField.fieldInto(st.charges, x, 0, z, ebuf); V = EField.potential(st.charges, p); }
     }
     const ok = !onCharge && isFinite(E) && isFinite(V);
@@ -478,7 +483,7 @@ function simEField(host, U) {
   U.group('แสดงผล');
   U.check('เส้นสนามไฟฟ้า (หัวลูกศรบอกทิศ E)', st.showLines, v => { st.showLines = v; lines.visible = arrows.visible = v; });
   U.check('พื้นศักย์ (สีและเส้นศักย์เท่า)', st.showFloor, v => { st.showFloor = v; floor.visible = v; if (grid) grid.visible = !v; });
-  const legend = U.html('<div class="legend ef-legend"><span><i data-c="w"></i>V บวก</span><span><i data-c="c"></i>V ลบ</span><span><i data-c="n" style="box-shadow:inset 0 0 0 1px var(--line)"></i>V ≈ 0</span><span><i style="background:#1c9a5a"></i>ทิศ E ที่จุดวัด</span></div>');
+  const legend = U.html('<div class="legend ef-legend"><span><i data-c="w"></i>V บวก</span><span><i data-c="c"></i>V ลบ</span><span><i data-c="n" style="box-shadow:inset 0 0 0 1px var(--line)"></i>V ≈ 0</span><span><i style="background:#1c9a5a"></i>ทิศ E ที่จุดวัด</span><span style="flex-basis:100%"><i style="width:16px;height:0;border-radius:0;border-top:1.5px solid var(--muted);vertical-align:3px"></i>เส้นศักย์เท่า (ห่างกันทีละ ΔV) · เส้นที่ <span class="mono">V = 0</span> (จางกว่า) อยู่กึ่งกลางระหว่าง + กับ − ไม่ใช่แกนหรือกำแพง</span></div>');
 
   RO = U.readouts('ค่าที่จุดวัด', [['P', 'ตำแหน่ง (x, z)'], ['E', 'ขนาดสนาม |E|'], ['V', 'ศักย์ไฟฟ้า V']]);
   const floorNote = U.note('สีพื้นบอกศักย์ V บนระนาบของประจุ: โทนอุ่น = บวก โทนเย็น = ลบ (ใกล้ประจุสีถูกจำกัดไว้ไม่ให้เข้มจนเละ) · เส้นบนพื้นคือ<b>เส้นศักย์เท่า ห่างกันทีละ ΔV = <span class="mono ef-dv"></span> เท่ากันทุกเส้น</b> (เลือกค่าให้อ่านง่ายในแต่ละฉาก จากชุด 1, 2, 5 × 10ⁿ V) เส้นยิ่งชิดแปลว่าสนามยิ่งแรง และตั้งฉากกับเส้นสนามที่วิ่งบนพื้น (ตรงที่เส้นถี่เกินกว่าจะแยกออก เส้นจะจางไป) · จำนวนเส้นสนามที่ออกจากประจุแปรตาม |q| เริ่มที่ + และจบที่ − (บางเส้นวิ่งออกไปไกลนอกจอ)');
@@ -564,7 +569,6 @@ function simEField(host, U) {
   canvas.addEventListener('lostpointercapture', onCancel);
   canvas.addEventListener('pointerleave', onLeave);
   window.addEventListener('blur', onBlur);
-  window.addEventListener('themechange', applyTheme);
 
   /* ── start ── */
   applyTheme();
@@ -667,7 +671,6 @@ function simEField(host, U) {
       canvas.removeEventListener('lostpointercapture', onCancel);
       canvas.removeEventListener('pointerleave', onLeave);
       window.removeEventListener('blur', onBlur);
-      window.removeEventListener('themechange', applyTheme);
       simEField.saved = { charges: st.charges.map(c => ({ x: c.x, y: c.y, z: c.z, q: c.q })), locked: st.locked, dv: st.dv, sel: st.sel, mode: st.mode, showLines: st.showLines, showFloor: st.showFloor, probe: { x: st.probe.x, z: st.probe.z } };
       // everything still in the scene is freed by host.dispose(); free what may not be attached
       Object.values(glyphs).forEach(t => t.dispose());

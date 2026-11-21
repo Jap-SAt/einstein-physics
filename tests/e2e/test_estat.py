@@ -789,4 +789,60 @@ async def test_link_then_back():
         await s.close()
 
 
+# ───────────── final review fixes ─────────────
+
+async def test_zero_charge_keeps_step_and_probe_defined():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('clear'); __ef.place(2, 2, 1);
+            const dv0 = __ef.contourStep(), q0 = __ef.charges()[0].q;
+            __ef.setQ(0, 0);
+            const dv1 = __ef.contourStep(), fl1 = __ef.dvFlashed(), msg0 = document.querySelector('#panel').innerText;
+            const ro0 = __ef.readout(2, 2);
+            __ef.setQ(0, q0);
+            const dv2 = __ef.contourStep(), fl2 = __ef.dvFlashed();
+            __ef.setQ(0, 0); __ef.place(-6, -6, -1);
+            const ro1 = __ef.readout(2, 2);
+            return { dv0, dv1, dv2, fl1, fl2, ro0, ro1, q0 }; }""")
+        assert r['dv1'] == r['dv0'] and r['dv2'] == r['dv0'], ('ΔV unchanged through 0 µC and back', r)
+        assert not r['fl1'] and not r['fl2'], ('no "changed" flash', r)
+        ro = r['ro0']
+        assert ro['E'] == 0 and ro['V'] == 0, ('finite E = 0, V = 0 at a 0 µC charge', ro)
+        assert r['ro1']['E'] is not None and r['ro1']['V'] is not None and r['ro1']['V'] < 0, r['ro1']
+        txt = await s.page.inner_text('#panel')
+        assert 'ไม่นิยาม' not in txt, txt
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_zero_contour_not_heavier_and_legend():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('dipole');
+            const c = __ef.charges(), p = c.find(x => x.q > 0), n = c.find(x => x.q < 0);
+            const dx = n.x - p.x, dz = n.z - p.z, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+            const a = 2.2, b = L - 2.2, N = 900;
+            const mid = L / 2;
+            const line = __ef.floorLine(p.x + ux * a, p.z + uz * a, p.x + ux * b, p.z + uz * b, N);
+            return { line, a, b, mid, N }; }""")
+        lum = lambda q: 0.3 * q[0] + 0.59 * q[1] + 0.11 * q[2]
+        N = r['N']
+        ink = [max(0, abs(lum(x) - lum(y))) if x and y else 0 for x, y in zip(r['line']['on'], r['line']['off'])]
+        tm = (r['mid'] - r['a']) / (r['b'] - r['a'])
+        w = 0.06 * N / 1.0
+        zi = [i for i in range(N) if abs(i / (N - 1) - tm) <= 0.04]
+        oi = [i for i in range(N) if abs(i / (N - 1) - tm) > 0.08]
+        zero_peak, other_peak = max(ink[i] for i in zi), max(ink[i] for i in oi)
+        assert other_peak > 12, ('ordinary contours visible on the sampled segment', other_peak)
+        assert zero_peak > 3, ('V = 0 contour is still visible', zero_peak)
+        # ink on the V = 0 line is clearly lighter than on an ordinary contour (it must not read as an axis)
+        assert zero_peak <= 0.8 * other_peak, ('V = 0 contour lighter than ordinary', zero_peak, other_peak)
+        txt = await s.page.inner_text('#panel .ef-legend')
+        assert 'V = 0' in txt and 'เส้นศักย์เท่า' in txt, txt
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
