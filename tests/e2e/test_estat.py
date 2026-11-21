@@ -63,11 +63,38 @@ async def test_estat_tabs():
         assert 'ห้องทดลองสนามไฟฟ้า' in await s.page.inner_text('#panel')
         await s.page.click('#tPlay')
         await s.page.goto(s.page.url.split('#')[0] + '#estat-quiz')
-        await s.page.wait_for_timeout(300)
-        assert 'แบบฝึกหัดบทนี้กำลังจัดทำ' in await s.page.inner_text('#tabview')
+        await s.page.wait_for_selector('.px-row')
+        r = await s.page.evaluate("""() => ({
+            dots: [...document.querySelectorAll('.px-row')].map(r => r.querySelectorAll('.px-dot').length),
+            old: !!document.querySelector('#qb, #opts'),
+            text: document.getElementById('tabview').innerText })""")
+        assert r['dots'] == [7, 7, 6], r
+        assert not r['old'], r
+        assert 'กำลังจัดทำ' not in r['text'], r['text'][:200]
         assert not s.errors, s.errors
     finally:
         await s.close()
+
+
+async def test_estat_quiz_guard_without_data():
+    """If PRACTICE.estat is missing or empty, #estat-quiz still shows the "กำลังจัดทำ" message (no level map, no error)."""
+    # the data script runs before app.js renders, so drop PRACTICE.estat as soon as it is defined
+    drop = """Object.defineProperty(window, 'PRACTICE', { configurable: true, set(v) {
+        Object.defineProperty(window, 'PRACTICE', { value: v, writable: true, configurable: true });
+        Object.defineProperty(v, 'estat', { get() { return undefined; }, set(_) {}, configurable: true }); } });"""
+    for init in (drop, drop.replace('return undefined;', 'return [];')):
+        s = await open_page('estat-quiz', init_script=init)
+        try:
+            await s.page.wait_for_timeout(400)
+            assert await s.page.evaluate("() => !(PRACTICE.estat || []).length && PRACTICE.mech.length === 20")
+            assert 'แบบฝึกหัดบทนี้กำลังจัดทำ' in await s.page.inner_text('#tabview')
+            assert await s.page.locator('.px-row').count() == 0
+            await s.page.evaluate("() => { location.hash = '#estat'; }")
+            await s.page.wait_for_timeout(300)
+            assert 'กำลังจัดทำ' in await s.page.inner_text('.nextcards a[href="#estat-quiz"]')
+            assert not s.errors, s.errors
+        finally:
+            await s.close()
 
 
 async def test_no_hardcoded_count():
