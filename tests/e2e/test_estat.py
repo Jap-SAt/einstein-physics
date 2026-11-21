@@ -18,6 +18,8 @@ async def test_home_order():
         assert by['estat'][1] == '04' and by['estat'][2] == 'ไฟฟ้าสถิต', by['estat']
         assert by['particle'][1] == '05', by['particle']
         assert by['waves'][2] == 'คลื่นและทัศนศาสตร์'
+        sub = await s.page.evaluate("() => document.querySelector('a.pick[href=\"#estat\"] .s').textContent.trim()")
+        assert sub == 'ประจุ · กฎของคูลอมบ์ · สนามและศักย์ · ตัวเก็บประจุ', sub
         assert not s.errors, s.errors
     finally:
         await s.close()

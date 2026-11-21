@@ -15,7 +15,7 @@ const MODS = [
   { id: 'mech', no: '01', group: 'classic', short: 'กลศาสตร์', en: 'The Foundation & Mechanics', title: 'รากฐานและกลศาสตร์', sub: 'หน่วยและเวกเตอร์ · โพรเจกไทล์ · กฎของนิวตัน · พลังงาน · วงโคจร', acc: 'var(--a5)', soft: 'var(--a5s)' },
   { id: 'thermo', no: '02', group: 'classic', short: 'อุณหพลศาสตร์', en: 'Matter & Thermodynamics', title: 'สสารและอุณหพลศาสตร์', sub: 'แบบจำลองอนุภาค · ความร้อน · ทฤษฎีจลน์ของแก๊ส · กฎอุณหพลศาสตร์', acc: 'var(--a6)', soft: 'var(--a6s)' },
   { id: 'waves', no: '03', group: 'classic', short: 'คลื่นและแสง', en: 'Waves & Optics', title: 'คลื่นและทัศนศาสตร์', sub: 'สมบัติคลื่น · การแทรกสอด · การหักเห · สลิตคู่ · เลนส์', acc: 'var(--a7)', soft: 'var(--a7s)' },
-  { id: 'estat', no: '04', group: 'classic', short: 'ไฟฟ้าสถิต', en: 'Electrostatics', title: 'ไฟฟ้าสถิต', sub: 'ประจุ · กฎของคูลอมบ์ · สนามไฟฟ้า · ศักย์ไฟฟ้า · ตัวเก็บประจุ', acc: 'var(--a8)', soft: 'var(--a8s)' },
+  { id: 'estat', no: '04', group: 'classic', short: 'ไฟฟ้าสถิต', en: 'Electrostatics', title: 'ไฟฟ้าสถิต', sub: 'ประจุ · กฎของคูลอมบ์ · สนามและศักย์ · ตัวเก็บประจุ', acc: 'var(--a8)', soft: 'var(--a8s)' },
   { id: 'particle', no: '05', group: 'modern', short: 'อนุภาค', en: 'Charged Particles', title: 'อนุภาคในสนามแม่เหล็ก', sub: 'แรงลอเรนซ์ · วงกลม · เกลียว · ตัวเลือกความเร็ว', acc: 'var(--a1)', soft: 'var(--a1s)' },
   { id: 'em', no: '06', group: 'modern', short: 'คลื่น EM', en: 'Electromagnetic Waves', title: 'คลื่นแม่เหล็กไฟฟ้า', sub: 'การเกิดคลื่น · สเปกตรัม · โพลาไรเซชัน', acc: 'var(--a2)', soft: 'var(--a2s)' },
   { id: 'atom', no: '07', group: 'modern', short: 'อะตอม', en: 'Atomic Physics', title: 'ฟิสิกส์อะตอม', sub: 'แบบจำลองโบร์ · สเปกตรัมไฮโดรเจน · โฟโตอิเล็กทริก', acc: 'var(--a3)', soft: 'var(--a3s)' },
