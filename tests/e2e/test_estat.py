@@ -650,4 +650,87 @@ async def test_lecture_chapter_numbers_match_mods():
         await s.close()
 
 
+async def test_no_horizontal_overflow_390():
+    for h in ['home', 'mech', 'thermo', 'waves', 'estat', 'particle', 'em', 'atom', 'nuclear']:
+        s = await open_page(h, viewport=(390, 844))
+        try:
+            w = await s.page.evaluate("() => document.documentElement.scrollWidth")
+            assert w <= 390, (h, w)
+            assert not s.errors, s.errors
+        finally:
+            await s.close()
+
+
+async def test_zoomtag_clear_of_reset_390():
+    s = await open_page('estat-sim', viewport=(390, 844))
+    try:
+        await s.page.wait_for_selector('#tReset')
+        r = await s.page.evaluate("""() => {
+            const b = document.querySelector('#tReset').getBoundingClientRect();
+            const z = document.querySelector('.zoomtag').getBoundingClientRect();
+            const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+            return { inter: !(b.right <= z.left || z.right <= b.left || b.bottom <= z.top || z.bottom <= b.top),
+                     hit: !!hit && !!hit.closest('#tReset'), b: [b.left, b.top, b.right, b.bottom], z: [z.left, z.top, z.right, z.bottom] };
+        }""")
+        assert not r['inter'], r
+        assert r['hit'], r
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def section_top(s, sec):
+    return await s.page.evaluate("""(id) => { const h = document.querySelector('#lec #' + id);
+        return h ? [h.getBoundingClientRect().top, innerHeight] : null; }""", sec)
+
+
+async def check_link(s, link_sel, idx, sec, expect_hash):
+    await s.page.wait_for_selector(link_sel, state='attached')
+    loc = s.page.locator(link_sel).nth(idx)
+    await loc.scroll_into_view_if_needed()
+    await loc.click()
+    await s.page.wait_for_timeout(1200)
+    h = await s.page.evaluate("() => location.hash")
+    assert h == expect_hash, h
+    tab = await s.page.evaluate("() => document.querySelector('.tabs a.on').getAttribute('href')")
+    assert tab == '#estat', tab
+    st = await section_top(s, sec)
+    assert st and 64 <= st[0] < st[1], (sec, st)
+
+
+async def test_cross_links():
+    # from particle (two links) and atom, section is scrolled into view below the sticky header
+    for h, sel, idx, sec in [('particle', '.lec a[href="#estat?s=s3"]', 0, 's3'),
+                             ('particle', '.lec a[href="#estat?s=s3"]', 1, 's3'),
+                             ('atom', '.lec a[href="#estat?s=s4"]', 0, 's4')]:
+        s = await open_page(h)
+        try:
+            await check_link(s, sel, idx, sec, '#estat?s=' + sec)
+            assert not s.errors, s.errors
+        finally:
+            await s.close()
+    # target already open: scroll away, then click a link-equivalent hash on the same chapter
+    s = await open_page('estat')
+    try:
+        await s.page.wait_for_selector('#lec h2')
+        await s.page.evaluate("() => { location.hash = '#estat?s=s4'; }")
+        await s.page.wait_for_timeout(1000)
+        st = await section_top(s, 's4')
+        assert st and 64 <= st[0] < st[1], st
+        await s.page.evaluate("() => window.scrollTo(0, 0)")
+        await s.page.evaluate("() => { const a = document.createElement('a'); a.href = '#estat?s=s4'; a.id = 'tl'; a.textContent = 'x'; document.querySelector('#lec').prepend(a); }")
+        await s.page.click('#tl')
+        await s.page.wait_for_timeout(1000)
+        st = await section_top(s, 's4')
+        assert st and 64 <= st[0] < st[1], st
+        # plain #estat still opens the top of the chapter
+        await s.page.evaluate("() => { location.hash = '#estat'; }")
+        await s.page.wait_for_timeout(600)
+        y = await s.page.evaluate("() => scrollY")
+        assert y == 0, y
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())

@@ -22,8 +22,9 @@ window.addEventListener('themechange', () => {
 function route(keepScroll) {
   stopSim();
   if (lecObs) { lecObs.disconnect(); lecObs = null; }
-  const h = location.hash.slice(1);
+  const [h, q] = location.hash.slice(1).split('?');   // #<id>?s=<section>: lecture, scrolled to that h2
   const [id, tab] = h.split('-');
+  const sm = /^s=(s\d+)$/.exec(q || ''), sec = sm ? sm[1] : null;
   const m = MODS.find(x => x.id === id);
   document.querySelectorAll('#mainnav a').forEach(a => a.classList.toggle('on', !!(m && a.dataset.id === m.id)));
   $('#readbar').style.width = '0';
@@ -32,7 +33,7 @@ function route(keepScroll) {
   if (!m) { root.setProperty('--macc', 'var(--ink)'); root.setProperty('--msoft', 'var(--soft)'); return renderHome(); }
   root.setProperty('--macc', m.acc);
   root.setProperty('--msoft', m.soft);
-  renderModule(m, tab === 'sim' || tab === 'quiz' ? tab : 'learn');
+  renderModule(m, tab === 'sim' || tab === 'quiz' ? tab : 'learn', sec);
 }
 window.addEventListener('hashchange', () => route());
 
@@ -84,7 +85,7 @@ function renderHome() {
 }
 
 /* ════════════════ module page ════════════════ */
-function renderModule(m, tab) {
+function renderModule(m, tab, sec) {
   const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบฝึกหัด', m.id + '-quiz']];
   view.innerHTML = `
   <div class="modhead"><div class="wrap modhead-in">
@@ -96,14 +97,14 @@ function renderModule(m, tab) {
   </div></div>
   <div id="tabview"></div>`;
   const tv = $('#tabview');
-  if (tab === 'learn') renderLecture(tv, m);
+  if (tab === 'learn') renderLecture(tv, m, sec);
   else if (tab === 'sim') renderSim(tv, m);
   else PracticeUI.render(tv, m);
 }
 
 /* ── lecture ── */
 let lecObs = null;
-function renderLecture(tv, m) {
+function renderLecture(tv, m, sec) {
   const tpl = document.getElementById('lec-' + m.id);
   tv.innerHTML = `<div class="lec-grid"><aside class="toc"><div class="kicker">ในบทนี้</div><div id="tocl"></div></aside>
     <article class="lec" id="lec"><div class="kicker" style="color:${m.acc}">บทที่ ${m.no} · ${m.en}</div><h1>${m.title}</h1></article></div>`;
@@ -122,7 +123,14 @@ function renderLecture(tv, m) {
   hs.forEach(h => lecObs.observe(h));
   if (typeof PracticeUI !== 'undefined') PracticeUI.enhanceWorked(art);
   typeset(art);
+  if (sec) { goSection(sec); setTimeout(() => goSection(sec), 700); }   // again once MathJax has settled the layout
 }
+function goSection(sec) { const h = document.querySelector('#lec #' + sec); if (h) h.scrollIntoView(); }   // h2 has scroll-margin-top (sticky header)
+// a link to the section of the lecture that is already open does not fire hashchange: just scroll
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href*="?s="]');
+  if (a && a.getAttribute('href') === location.hash && $('#lec')) { e.preventDefault(); goSection(location.hash.split('?s=')[1]); }
+});
 window.addEventListener('scroll', () => {
   const bar = $('#readbar'); if (!$('#lec')) { bar.style.width = '0'; return; }
   const d = document.documentElement, max = d.scrollHeight - innerHeight;

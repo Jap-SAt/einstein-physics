@@ -75,6 +75,8 @@ button{background:none;border:0;font:inherit;color:inherit;cursor:pointer;paddin
 .lec p{margin:0 0 16px}
 .lec ul{margin:0 0 18px;padding-left:22px;list-style:disc}
 .lec li{margin:5px 0}
+.lec .xref{font-size:14px;color:var(--muted);margin:-4px 0 14px}
+.lec .xref a{color:var(--macc);text-decoration:underline;text-underline-offset:3px}
 .lec .lead{font-size:19.5px;color:var(--text2);line-height:1.75}
 .eq{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 18px;margin:20px 0;overflow-x:auto}
 .feyn{border-radius:14px;padding:16px 20px;margin:24px 0;background:var(--msoft);font-size:16.5px;line-height:1.8}
@@ -133,7 +135,8 @@ table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:14.5px;
 .sim-tools{position:absolute;left:16px;top:14px;display:flex;gap:8px;flex-wrap:wrap}
 .tool{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
 .tool:hover{border-color:#cdc9bf}
-.zoomtag{position:absolute;right:16px;top:14px;font-size:12px;background:var(--topbar);padding:5px 9px;border-radius:8px;color:var(--muted)}
+.zoomtag{position:absolute;right:16px;top:14px;font-size:12px;background:var(--topbar);padding:5px 9px;border-radius:8px;color:var(--muted);pointer-events:none}
+@media (max-width:420px){.zoomtag{right:auto;left:16px;top:58px}}
 .sim-panel{border-left:1px solid var(--line);background:var(--card);overflow-y:auto;padding:22px 22px 48px}
 .p-title{font-weight:650;font-size:17px;line-height:1.35}
 .p-sub{font-size:13px;color:var(--muted);margin-top:3px}
@@ -381,3 +384,6 @@ input[type=range]:disabled{opacity:.45}
 .ef-dv{border-radius:5px;padding:0 3px;transition:background-color .4s,color .4s}
 .ef-dv.flash{background:#f6d58a;color:#17191e}
 html.dark .ef-dv.flash{background:#8a6a1e;color:#fff}
+
+/* ── phones: grid items may shrink below their content width (home overflowed at 390 px) ── */
+.hero>div{min-width:0}
