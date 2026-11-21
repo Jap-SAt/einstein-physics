@@ -370,3 +370,11 @@ mjx-container > svg{display:inline-block}
 .cc-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 40px));padding:22px 24px;border-radius:16px;background:#0b0b14;border:1px solid #ffffff1a;text-align:center;line-height:1.7}
 .cc-error p{margin:0 0 14px;color:#e6dccb}
 @media (max-width:700px){.cc-end{bottom:auto;top:128px}}   /* below the HUD, clear of the finale captions */
+/* electric-field lab (estat) */
+.ef-msg{font-size:12.5px;line-height:1.55;color:var(--muted);min-height:2.2em;margin:2px 0 0}
+.ef-msg.warn{color:#b4441c;font-weight:500}
+html.dark .ef-msg.warn{color:#f0a070}
+.ef-sel{font-size:13px;color:var(--text2);margin:6px 0 2px;line-height:1.6}
+.ef-sel .mono{font-size:12.5px;color:var(--ink)}
+.chips button:disabled{opacity:.45;cursor:default;border-color:var(--line);color:var(--muted)}
+input[type=range]:disabled{opacity:.45}
