@@ -370,4 +370,138 @@ async def test_test_charge():
         await s.close()
 
 
+
+# ───────────── Task 3 review fixes ─────────────
+
+def sheet_index(c):
+    """+1 for the + sheet, −1 for the − sheet (plates preset)."""
+    return 1 if c['q'] > 0 else -1
+
+
+async def test_plates_uniform_and_locked():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('plates');
+            return { c: __ef.charges(), l: __ef.lines(), locked: __ef.locked() }; }""")
+        c, lines = r['c'], r['l']
+        assert r['locked'] is True
+        assert len(c) > 8 and len([x for x in c if x['q'] > 0]) == len([x for x in c if x['q'] < 0]), len(c)
+        fromP = [L for L in lines if c[L['from']]['q'] > 0]
+        ok = [L for L in fromP if L['to'] >= 0 and c[L['to']]['q'] < 0]
+        assert fromP and len(ok) >= 0.8 * len(fromP), (len(ok), len(fromP))
+        # the sim's own readout: near-uniform E in the central region, along the plate normal
+        pts = [(0, 0), (1.5, 1), (-1.5, 1), (1.5, -1), (-1.5, -1)]
+        ro = await s.page.evaluate("(pts) => pts.map(p => __ef.readout(p[0], p[1]))", pts)
+        nrm = await s.page.evaluate("() => __ef.plateNormal()")
+        E0 = ro[0]['E']
+        assert E0 and E0 > 0, ro
+        import math
+        for (x, z), q in zip(pts, ro):
+            assert abs(q['E'] / E0 - 1) <= 0.20, ((x, z), q['E'], E0)
+            cosang = (q['Ex'] * nrm[0] + q['Ez'] * nrm[1]) / q['E']
+            assert math.degrees(math.acos(max(-1, min(1, cosang)))) <= 5, ((x, z), q, nrm)
+        # locked demo: no placing, dragging or q editing
+        r2 = await s.page.evaluate("""() => { const n = __ef.charges().length, c0 = __ef.charges()[0];
+            const placed = __ef.place(15, 15, 1); __ef.drag(0, 10, 10); __ef.setQ(0, 5);
+            const c1 = __ef.charges()[0];
+            return { n, n2: __ef.charges().length, placed, same: c0.x === c1.x && c0.z === c1.z && c0.q === c1.q,
+                     slider: document.querySelector('#panel input[type=range]').disabled }; }""")
+        assert r2['placed'] is False and r2['n'] == r2['n2'] and r2['same'] and r2['slider'], r2
+        await s.page.wait_for_timeout(10500)
+        note = s.page.locator('#panel .ef-lock')
+        assert await note.is_visible()
+        t = await note.inner_text()
+        assert 'ล้างฉาก' in t and 'สาธิต' in t, t
+        await s.page.click('#panel .ef-presets button[data-p="clear"]')
+        assert not await note.is_visible()
+        assert await s.page.evaluate("() => [__ef.locked(), __ef.place(3, 3, 1), __ef.charges().length]") == [False, True, 1]
+        await panel_clean(s)
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+def crossings(a, b, thr=12):
+    """count runs where the with-contours pixel is darker/different than the no-contour pixel"""
+    lum = lambda p: 0.3 * p[0] + 0.59 * p[1] + 0.11 * p[2]
+    runs, inrun = 0, False
+    for pa, pb in zip(a, b):
+        d = abs(lum(pa) - lum(pb)) > thr
+        if d and not inrun:
+            runs += 1
+        inrun = d
+    return runs
+
+
+async def test_contour_step_per_scene():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('plates');
+            const ch = __ef.charges().map(c => ({ x: c.x, y: c.y, z: c.z, q: c.q }));
+            const dv = __ef.contourStep();
+            const nrm = __ef.plateNormal();
+            const a = EField.potential(ch, { x: -1.5 * nrm[0], y: 0, z: -1.5 * nrm[1] }), b = EField.potential(ch, { x: 1.5 * nrm[0], y: 0, z: 1.5 * nrm[1] });
+            const lo = Math.min(a, b), hi = Math.max(a, b);
+            let n = 0; for (let k = Math.ceil(lo / dv); k * dv < hi; k++) if (k * dv > lo) n++;
+            return { dv, n, nrm, note: document.querySelector('#panel .ef-dv').textContent,
+                     line: __ef.floorLine(-1.9 * nrm[0], -1.9 * nrm[1], 1.9 * nrm[0], 1.9 * nrm[1], 240) }; }""")
+        dv = r['dv']
+        assert str(dv)[0] in '125' and set(str(int(dv))[1:]) <= {'0'}, ('1-2-5 ladder', dv)
+        assert 4 <= r['n'] <= 10, r['n']
+        assert any(ch.isdigit() for ch in r['note']) and 'V' in r['note'], r['note']
+        cx = crossings(r['line']['on'], r['line']['off'])
+        assert cx >= 4, ('visible contours across the gap', cx)
+        d = await s.page.evaluate("""() => { __ef.preset('dipole');
+            return { dv: __ef.contourStep(), note: document.querySelector('#panel .ef-dv').textContent,
+                     line: __ef.floorLine(-3, 4, 3, 4, 240) }; }""")
+        assert 2e4 <= d['dv'] <= 1e5, d['dv']
+        assert crossings(d['line']['on'], d['line']['off']) >= 2
+        assert d['note'] != r['note'], (d['note'], r['note'])
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_arrowheads_not_facing_camera():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("() => { __ef.preset('pp'); return __ef.arrowStats(); }")
+        await s.page.wait_for_timeout(300)
+        st = await s.page.evaluate("() => __ef.arrowStats()")
+        assert st['shown'] > 0 and st['facing'] == 0, st
+        await s.page.evaluate("() => __ef.setCamera(0, 40, 0.01)")       # straight down: vertical lines face the camera
+        await s.page.wait_for_timeout(400)
+        st2 = await s.page.evaluate("() => __ef.arrowStats()")
+        assert st2['shown'] > 0 and st2['facing'] == 0, st2
+        assert st2['all'] > st2['shown'], st2
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_touch_pick_slop():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ef.preset('dipole'); const p = __ef.screenOf(0);
+            return { touch: __ef.pickAt(p.x + 18, p.y, 'touch'), mouse: __ef.pickAt(p.x + 18, p.y, 'mouse'),
+                     far: __ef.pickAt(p.x + 40, p.y, 'touch'), centre: __ef.pickAt(p.x, p.y, 'mouse') }; }""")
+        assert r == {'touch': 0, 'mouse': -1, 'far': -1, 'centre': 0}, r
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_dispose_frees_arrows():
+    s = await open_sim()
+    try:
+        await s.page.evaluate("""() => { window.__arrowDisposed = 0;
+            const m = __ef._arrows(); m.addEventListener('dispose', () => { window.__arrowDisposed++; }); }""")
+        await s.page.evaluate("() => { location.hash = '#estat'; }")
+        await s.page.wait_for_timeout(300)
+        assert await s.page.evaluate("() => window.__arrowDisposed") >= 1
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
