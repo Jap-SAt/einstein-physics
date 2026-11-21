@@ -21,9 +21,11 @@ window.addEventListener('themechange', () => {
 
 function route(keepScroll) {
   stopSim();
+  if (cancelRescroll) { cancelRescroll(); cancelRescroll = null; }
   if (lecObs) { lecObs.disconnect(); lecObs = null; }
-  const h = location.hash.slice(1);
+  const [h, q] = location.hash.slice(1).split('?');   // #<id>?s=<section>: lecture, scrolled to that h2
   const [id, tab] = h.split('-');
+  const sm = /^s=(s\d+)$/.exec(q || ''), sec = sm ? sm[1] : null;
   const m = MODS.find(x => x.id === id);
   document.querySelectorAll('#mainnav a').forEach(a => a.classList.toggle('on', !!(m && a.dataset.id === m.id)));
   $('#readbar').style.width = '0';
@@ -32,7 +34,7 @@ function route(keepScroll) {
   if (!m) { root.setProperty('--macc', 'var(--ink)'); root.setProperty('--msoft', 'var(--soft)'); return renderHome(); }
   root.setProperty('--macc', m.acc);
   root.setProperty('--msoft', m.soft);
-  renderModule(m, tab === 'sim' || tab === 'quiz' ? tab : 'learn');
+  renderModule(m, tab === 'sim' || tab === 'quiz' ? tab : 'learn', sec);
 }
 window.addEventListener('hashchange', () => route());
 
@@ -57,7 +59,7 @@ function renderHome() {
         <h1>เห็นฟิสิกส์<br>ก่อน<span class="soft">จำสูตร</span></h1>
         <button class="atom-btn" id="heroAtom" aria-label="คลิกเพื่อย้อนชมกำเนิดจักรวาล" title="คลิกเพื่อย้อนชมกำเนิดจักรวาล"><span class="atom-tip">คลิกเพื่อย้อนสู่กำเนิดจักรวาล</span></button>
       </div>
-      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน และคลื่น แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้วฝึกทำโจทย์ทีละระดับด้วยแบบฝึกหัด</p>
+      <p class="mt-6 text-[18px] leading-8 max-w-[540px]" style="color:var(--text2)">เริ่มจากกลศาสตร์ ความร้อน คลื่น และไฟฟ้าสถิต แล้วต่อไปถึงอนุภาค คลื่นแม่เหล็กไฟฟ้า อะตอม และนิวเคลียส ผ่านบทเรียนสั้นที่อ่านจบได้ในครั้งเดียว แบบจำลองสามมิติที่หมุน ซูม และปรับค่าได้เอง แล้วฝึกทำโจทย์ทีละระดับด้วยแบบฝึกหัด</p>
       <div class="flex flex-wrap gap-3 mt-8">
         <a class="btn btn-primary" href="#mech">เริ่มบทที่ 1</a>
         <a class="btn btn-ghost" href="#atom-sim">ลองการจำลองอะตอม</a>
@@ -84,7 +86,7 @@ function renderHome() {
 }
 
 /* ════════════════ module page ════════════════ */
-function renderModule(m, tab) {
+function renderModule(m, tab, sec) {
   const tabs = [['learn', 'บทเรียน', m.id], ['sim', 'การจำลอง 3D', m.id + '-sim'], ['quiz', 'แบบฝึกหัด', m.id + '-quiz']];
   view.innerHTML = `
   <div class="modhead"><div class="wrap modhead-in">
@@ -96,14 +98,14 @@ function renderModule(m, tab) {
   </div></div>
   <div id="tabview"></div>`;
   const tv = $('#tabview');
-  if (tab === 'learn') renderLecture(tv, m);
+  if (tab === 'learn') renderLecture(tv, m, sec);
   else if (tab === 'sim') renderSim(tv, m);
   else PracticeUI.render(tv, m);
 }
 
 /* ── lecture ── */
-let lecObs = null;
-function renderLecture(tv, m) {
+let lecObs = null, rescrollT = null, cancelRescroll = null;
+function renderLecture(tv, m, sec) {
   const tpl = document.getElementById('lec-' + m.id);
   tv.innerHTML = `<div class="lec-grid"><aside class="toc"><div class="kicker">ในบทนี้</div><div id="tocl"></div></aside>
     <article class="lec" id="lec"><div class="kicker" style="color:${m.acc}">บทที่ ${m.no} · ${m.en}</div><h1>${m.title}</h1></article></div>`;
@@ -111,7 +113,7 @@ function renderLecture(tv, m) {
   art.appendChild(tpl.content.cloneNode(true));
   art.insertAdjacentHTML('beforeend', `<div class="nextcards">
      <a href="#${m.id}-sim"><b>ลองในการจำลอง 3D →</b><span>ปรับค่าเองแล้วสังเกตผล</span></a>
-     <a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}</span></a></div>`);
+     <a href="#${m.id}-quiz"><b>ทำแบบฝึกหัด →</b><span>${(PRACTICE[m.id] || []).length ? `แบบฝึกหัด ${PRACTICE[m.id].length} ข้อ · ทำถูกแล้ว ${PracticeUI.solved(m.id).done}` : 'กำลังจัดทำ'}</span></a></div>`);
   const hs = [...art.querySelectorAll('h2')];
   $('#tocl').innerHTML = hs.map(h => `<a role="button" tabindex="0" data-t="${h.id}">${h.textContent.replace(/^\d+/, '')}</a>`).join('');
   $('#tocl').onclick = e => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.t).scrollIntoView({ behavior: 'smooth' }); };
@@ -122,7 +124,21 @@ function renderLecture(tv, m) {
   hs.forEach(h => lecObs.observe(h));
   if (typeof PracticeUI !== 'undefined') PracticeUI.enhanceWorked(art);
   typeset(art);
+  if (sec) {
+    goSection(sec);
+    // again once MathJax has settled the layout, unless the user has moved on or started scrolling
+    const cancel = () => { clearTimeout(rescrollT); rescrollT = null; ['wheel', 'touchstart', 'keydown'].forEach(ev => window.removeEventListener(ev, cancel)); };
+    rescrollT = setTimeout(() => { cancel(); if (location.hash.endsWith('?s=' + sec) && document.getElementById('lec')) goSection(sec); }, 700);
+    ['wheel', 'touchstart', 'keydown'].forEach(ev => window.addEventListener(ev, cancel, { once: true, passive: true }));
+    cancelRescroll = cancel;
+  }
 }
+function goSection(sec) { const h = document.querySelector('#lec #' + sec); if (h) h.scrollIntoView(); }   // h2 has scroll-margin-top (sticky header)
+// a link to the section of the lecture that is already open does not fire hashchange: just scroll
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href*="?s="]');
+  if (a && a.getAttribute('href') === location.hash && $('#lec')) { e.preventDefault(); goSection(location.hash.split('?s=')[1]); }
+});
 window.addEventListener('scroll', () => {
   const bar = $('#readbar'); if (!$('#lec')) { bar.style.width = '0'; return; }
   const d = document.documentElement, max = d.scrollHeight - innerHeight;
@@ -131,7 +147,7 @@ window.addEventListener('scroll', () => {
 
 /* ── simulation page ── */
 const SIMS = {
-  mech: () => simProjectile, thermo: () => simGas, waves: () => simRipple,
+  mech: () => simProjectile, thermo: () => simGas, waves: () => simRipple, estat: () => simEField,
   particle: () => simParticle, em: () => simEM, atom: () => simAtom, nuclear: () => simNuclear
 };
 function renderSim(tv, m) {
