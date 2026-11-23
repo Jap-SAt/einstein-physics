@@ -403,4 +403,238 @@ async def test_fps_drag():
         await s.close()
 
 
+# ───────────── review fixes: test what is drawn and displayed ─────────────
+
+KH = 0.25          # 1 scene unit of height = 4 V (stated in the panel note)
+
+# Independent truth for the current state: Circuit.solve (DC scenes) or Circuit.rcState (RC, charging from empty),
+# plus everything the lab has drawn (__ck.edges(): instance matrices, plates, markers).
+DRAWN = """(sc) => {
+    const p = __ck.params(); let v, el, sum;
+    if (sc === 'rc') {
+        const t = __ck.rc().t, s = Circuit.rcState(p, 'charge', t), i = s.i;
+        v = { 0: 0, 1: p.eps, A: p.eps - i * p.r, 2: p.eps - i * p.r, 3: s.vC };
+        el = { eps: { I: i, V: -p.eps }, r: { I: i, V: i * p.r }, R1: { I: i, V: i * p.R1 }, C: { I: i, V: s.vC } };
+        sum = { Rtotal: p.R1, Itotal: i, Vterm: p.eps - i * p.r, t, tau: Circuit.tau(p, 'charge'), q: s.q, vC: s.vC, i };
+    } else {
+        const sol = Circuit.solve(sc, p); v = {}; sol.v.forEach((x, n) => { v[n] = x; }); el = sol.elems;
+        sum = { Rtotal: sol.Rtotal, Itotal: sol.Itotal, Vterm: sol.Vterm };
+    }
+    return { p, v, el, sum, edges: __ck.edges(), spacing: __ck.spacing, elapsed: __ck.elapsed() }; }"""
+
+
+def key(pt):
+    return (round(pt[0], 6), round(pt[1], 6))
+
+
+def check_kcl(sc, d):
+    node = {}
+    imax = max(abs(e['I']) for e in d['edges'])
+    for e in d['edges']:
+        a, b = key(e['pts'][0]), key(e['pts'][-1])
+        node[a] = node.get(a, 0) - e['I']
+        node[b] = node.get(b, 0) + e['I']
+        if e['kind'] == 'elem':
+            w = d['el'][e['id']]['I']
+            assert abs(e['I'] - w) <= 1e-9 * max(1, abs(w)), (sc, e['id'], e['I'], w)
+    for pt, s in node.items():
+        assert abs(s) <= 1e-9 * max(1, imax), ('current in = current out', sc, pt, s)
+
+
+def check_heights(sc, d):
+    seen = {}
+    for e in d['edges']:
+        pts, nodes = e['pts'], e['nodes']
+        for k, sg in enumerate(e['segs']):
+            for (x, y, z), pt, n in ((sg[:3], pts[k], nodes[k]), (sg[3:], pts[k + 1], nodes[k + 1])):
+                assert abs(x - pt[0]) < 1e-4 and abs(z + pt[1]) < 1e-4, ('drawn where laid out', sc, e['id'], (x, z), pt)
+                assert abs(y - KH * d['v'][str(n)]) < 1e-4, ('drawn height = KH·V', sc, e['id'], n, y, d['v'][str(n)])
+                seen.setdefault(key(pt), []).append(y)
+        if e['kind'] == 'elem':
+            ya, yb = e['segs'][0][1], e['segs'][-1][4]
+            assert abs((ya - yb) - KH * d['el'][e['id']]['V']) < 1e-4, ('drop across element', sc, e['id'], ya, yb)
+            if e['id'] == 'eps':
+                assert abs(ya) < 1e-6, ('negative pole at 0 V', sc, ya)
+    for pt, ys in seen.items():
+        assert max(ys) - min(ys) < 1e-4, ('one height where pieces meet', sc, pt, ys)
+
+
+def arc_of(e, m):
+    """floor arc position of a marker along the edge polyline, and the drawn height there"""
+    best = None
+    for k in range(len(e['pts']) - 1):
+        (ax, ay), (bx, by) = e['pts'][k], e['pts'][k + 1]
+        az, bz = -ay, -by
+        dx, dz = bx - ax, bz - az
+        L2 = dx * dx + dz * dz
+        u = max(0, min(1, ((m[0] - ax) * dx + (m[2] - az) * dz) / L2)) if L2 else 0
+        dist = ((ax + u * dx - m[0]) ** 2 + (az + u * dz - m[2]) ** 2) ** 0.5
+        if best is None or dist < best[0]:
+            y0, y1 = e['segs'][k][1], e['segs'][k][4]
+            best = (dist, sum(((e['pts'][j + 1][0] - e['pts'][j][0]) ** 2 + (e['pts'][j + 1][1] - e['pts'][j][1]) ** 2) ** 0.5
+                              for j in range(k)) + u * L2 ** 0.5, y0 + u * (y1 - y0))
+    return best
+
+
+def check_markers(sc, d):
+    sp = d['spacing']
+    for e in d['edges']:
+        if e['id'] == 'C':
+            assert not e['markers'], 'no markers across the capacitor gap'
+            continue
+        ph = e['off'] % sp
+        want = [ph + k * sp for k in range(int(e['L'] / sp) + 2) if ph + k * sp < e['L'] - 1e-6]
+        rows = []
+        for m in e['markers']:
+            dist, sa, ya = arc_of(e, m)
+            rows.append((sa, ya, m[1], dist))
+        rows.sort()
+        assert all(r[3] < 1e-3 for r in rows), ('markers on the wire', sc, e['id'])
+        assert all(abs(r[1] - r[2]) < 1e-3 for r in rows), ('markers at the drawn height', sc, e['id'])
+        s = [r[0] for r in rows]
+        assert len(s) in (len(want), len(want) + 1) and all(abs(a - b) < 2e-3 for a, b in zip(s, want)), ('one spacing, phase = off', sc, e['id'], s, want)
+
+
+async def drawn(s, sc):
+    return await s.page.evaluate(DRAWN, sc)
+
+
+async def test_drawn_kcl_heights_markers():
+    s = await open_sim()
+    try:
+        cases = [(sc, None) for sc in SCENES if sc != 'rc'] + [('twoloop', "() => { __ck.setParam('eps', 12); __ck.setParam('eps2', 3); }"),
+                 ('parallel', "() => { __ck.setParam('R2', 1000); __ck.setParam('R3', 1); }"),
+                 ('rc', "() => { __ck.switchTo('charge'); const p = __ck.params(); __ck.setTime((p.R1 + p.r) * p.C); }"),
+                 ('rc', "() => { const p = __ck.params(); __ck.setTime(0.3 * (p.R1 + p.r) * p.C); }")]
+        for sc, setup in cases:
+            await s.page.evaluate("(sc) => __ck.scene(sc)", sc)
+            if setup:
+                await s.page.evaluate(setup)
+            d = await drawn(s, sc)
+            if sc == 'twoloop' and setup:
+                assert d['el']['eps2']['I'] < 0, d['el']['eps2']
+            check_kcl(sc, d)
+            check_heights(sc, d)
+            check_markers(sc, d)
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_markers_move_with_current():
+    """every marker stream advances by K·I·dt with one K for the whole circuit (so markers/second ∝ I everywhere)"""
+    s = await open_sim()
+    try:
+        for sc, setup in [('mixed', None), ('twoloop', "() => __ck.setParam('eps2', 3)"), ('parallel', "() => { __ck.setParam('R2', 1000); __ck.setParam('R3', 1); }")]:
+            await s.page.evaluate("(sc) => __ck.scene(sc)", sc)
+            if setup:
+                await s.page.evaluate(setup)
+            d0 = await drawn(s, sc)
+            await s.page.wait_for_timeout(600)
+            d1 = await drawn(s, sc)
+            dt = d1['elapsed'] - d0['elapsed']
+            assert dt > 0.1, dt
+            imax = max(abs(e['I']) for e in d0['edges'])
+            ks = []
+            for e0, e1 in zip(d0['edges'], d1['edges']):
+                if e0['id'] == 'C' or abs(e0['I']) < 1e-6 * imax:
+                    continue
+                ks.append((e1['off'] - e0['off']) / (e0['I'] * dt))
+            assert ks and min(ks) > 0, ('markers move along +I', sc, ks)
+            assert max(ks) - min(ks) <= 1e-6 * max(ks), ('one speed scale K for every wire', sc, min(ks), max(ks))
+            check_markers(sc, d1)
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+def parse_row(txt, unit):
+    return parse_si(txt, unit)
+
+
+def near(a, b, rel=0.006):
+    return abs(a - b) <= rel * abs(b) + 1e-9
+
+
+PANEL = """() => { const g = k => document.querySelector('#panel .ck-pick [data-k="' + k + '"]').textContent;
+    const w = k => document.querySelector('#panel [data-k="' + k + '"]').textContent;
+    return { I: g('I'), V: g('V'), P: g('P'), Rt: w('Rt'), It: w('It'), Vt: w('Vt'),
+             tau: w('tau'), q: w('q'), vc: w('vc'), i: w('i') }; }"""
+
+
+async def test_panel_numbers_match_solver():
+    s = await open_sim()
+    try:
+        await s.page.click('#tPlay')                 # pause: the RC clock must not move while the panel is read
+        cases = [(sc, None) for sc in SCENES if sc != 'rc'] + [('twoloop', "() => __ck.setParam('eps2', 3)"),
+                 ('series', "() => { __ck.setParam('R1', 330); __ck.setParam('r', 0.05); }"),
+                 ('rc', "() => { const p = __ck.params(); __ck.setTime((p.R1 + p.r) * p.C); }")]
+        for sc, setup in cases:
+            await s.page.evaluate("(sc) => __ck.scene(sc)", sc)
+            if setup:
+                await s.page.evaluate(setup)
+            d = await drawn(s, sc)
+            p, el, sm = d['p'], d['el'], d['sum']
+            for e in d['edges']:
+                await s.page.evaluate("(id) => __ck.pick(id)", e['id'])
+                t = await s.page.evaluate(PANEL)
+                I = parse_row(t['I'], 'A')
+                if e['kind'] == 'wire':
+                    assert near(I, e['I']), (sc, e['id'], t['I'], e['I'])
+                    assert near(parse_row(t['V'], 'V'), d['v'][str(e['nodes'][0])]), (sc, e['id'], t['V'])
+                    continue
+                eid, x = e['id'], el[e['id']]
+                assert near(I, x['I']), (sc, eid, t['I'], x['I'])
+                if eid in ('eps', 'eps2'):
+                    V, P = p[eid] - x['I'] * p['r'], p[eid] * x['I']
+                elif eid == 'C':
+                    V, P = x['V'], x['V'] * x['I']
+                else:
+                    R = p['r'] if eid in ('r', 'r2') else p[eid]
+                    V, P = x['I'] * R, x['I'] ** 2 * R
+                assert near(parse_row(t['V'], 'V'), V), (sc, eid, t['V'], V)
+                assert near(parse_row(t['P'], 'W'), P), (sc, eid, t['P'], P)
+            if sm['Rtotal'] is None:
+                assert t['Rt'].strip() == '—', t['Rt']
+            else:
+                assert near(parse_row(t['Rt'], 'Ω'), sm['Rtotal']), (sc, t['Rt'], sm['Rtotal'])
+            assert near(parse_row(t['It'], 'A'), sm['Itotal']), (sc, t['It'], sm['Itotal'])
+            assert near(parse_row(t['Vt'], 'V'), sm['Vterm']), (sc, t['Vt'], sm['Vterm'])
+            if sc == 'rc':
+                for k, u in (('tau', 's'), ('q', 'C'), ('vc', 'V'), ('i', 'A')):
+                    assert near(parse_row(t[k], u), sm[{'vc': 'vC'}.get(k, k)]), (k, t[k], sm)
+        txt = await panel_clean(s)
+        assert 'ความต่างศักย์ระหว่างขั้ว' in txt and 'V ระหว่างขั้ว' not in txt, txt
+        assert 'ทิศกระแสตามข้อตกลง' in txt and 'สมมติ' not in txt and 'สมมุติ' not in txt, txt
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
+async def test_wire_readout_by_pointer():
+    s = await open_sim()
+    try:
+        d = await s.page.evaluate("() => { __ck.scene('series'); return { e: __ck.edges(), v: Circuit.solve('series', __ck.params()).v, I: Circuit.solve('series', __ck.params()).elems.R1.I }; }")
+        r1 = next(e for e in d['e'] if e['id'] == 'R1')
+        before = next(e for e in d['e'] if e['kind'] == 'wire' and key(e['pts'][-1]) == key(r1['pts'][0]))
+        after = next(e for e in d['e'] if e['kind'] == 'wire' and key(e['pts'][0]) == key(r1['pts'][-1]))
+        got = []
+        for w in (before, after):
+            p = await s.page.evaluate("(i) => __ck.screenOfEdge(i)", w['i'])
+            await s.page.mouse.click(p['x'], p['y'])
+            sel = await s.page.evaluate("() => __ck.selected()")
+            assert sel == w['id'], ('tapped the wire section', sel, w['id'])
+            t = await s.page.evaluate(PANEL)
+            title = await s.page.inner_text('#panel .ck-pick .ro-title')
+            assert 'สาย' in title, title
+            got.append((t['I'], parse_row(t['I'], 'A'), parse_row(t['V'], 'V')))
+        assert got[0][0] == got[1][0], ('same current before and after R₁', got)
+        assert near(got[0][1], d['I']), (got, d['I'])
+        assert near(got[0][2], d['v'][r1['nodes'][0]]) and near(got[1][2], d['v'][r1['nodes'][1]]), (got, d['v'])
+        assert got[0][2] > got[1][2], ('potential drops across R₁, current does not', got)
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())

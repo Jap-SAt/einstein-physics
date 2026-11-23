@@ -102,7 +102,7 @@ function simCircuit(host, U) {
     showHeight: saved ? saved.showHeight : true,
     rc: { mode: saved ? saved.mode : 'charge', t: 0, t0: 0, v0: 0 },
     play: true,
-    v: [0], I: {}, el: {}, sum: { Rtotal: null, Itotal: 0, Vterm: 0 }, K: 0
+    v: [0], I: {}, el: {}, sum: { Rtotal: null, Itotal: 0, Vterm: 0 }, K: 0, elapsed: 0
   };
   st.rc.v0 = st.p.eps;
   let edges = [], elems = [], frames = 0, built = false, uiReady = false, msgTimer = 0;
@@ -167,7 +167,10 @@ function simCircuit(host, U) {
   selBox.visible = false; scene.add(selBox);
 
   let sg = new THREE.Group(); world.add(sg);
-  let shadow = null, drops = null, dropPts = [], dots = [];
+  let shadow = null, drops = null, dropPts = [], dots = [], segEdge = [];
+  // reference direction of a picked wire section (I > 0 along the drawn polyline)
+  const selArrow = new THREE.Mesh(coneGeo, own(new THREE.MeshBasicMaterial({ color: P.sel })));
+  selArrow.scale.setScalar(1.3); selArrow.visible = false; world.add(selArrow);
 
   /* ── RC run (Circuit.rcState / Circuit.tau only) ── */
   const tauNow = () => Circuit.tau(st.p, st.rc.mode);
@@ -223,16 +226,21 @@ function simCircuit(host, U) {
   function buildScene() {
     clearScene();
     edges = LAYOUT[st.scene](st.rc.mode);
-    let nseg = 0, nmk = 0;
+    let nseg = 0, nmk = 0, acc = 0;
     const ends = {}, verts = {};
     const key = pt => pt[0] + ',' + pt[1];
-    edges.forEach(e => {
+    segEdge = [];
+    edges.forEach((e, ei) => {
       e.nodes = e.kind === 'wire' ? e.pts.map(() => e.node) : [e.na, e.nb];
       e.cum = [0]; e.L = 0;
       for (let k = 1; k < e.pts.length; k++) e.cum.push(e.L += Math.hypot(e.pts[k][0] - e.pts[k - 1][0], e.pts[k][1] - e.pts[k - 1][1]));
       e.cap = e.kind === 'elem' && e.id === 'C';                 // no wire and no markers across the capacitor gap
-      if (!e.cap) nseg += e.pts.length - 1;
-      e.n = e.cap ? 0 : Math.max(1, Math.round(e.L / SP)); e.base = nmk; nmk += e.n; e.off = 0;
+      e.s0 = nseg;
+      if (!e.cap) { for (let k = 1; k < e.pts.length; k++) segEdge.push(ei); nseg += e.pts.length - 1; }
+      // one spacing SP everywhere (slots for every marker that can fit); the phase starts where the previous edge in
+      // layout order left off, so a series run of wires reads as one evenly spaced stream
+      e.n = e.cap ? 0 : Math.floor(e.L / SP) + 1; e.base = nmk; nmk += e.n;
+      e.off = -acc; acc += e.L;
       [e.pts[0], e.pts[e.pts.length - 1]].forEach(pt => { ends[key(pt)] = (ends[key(pt)] || 0) + 1; });
       e.pts.forEach((pt, k) => { verts[key(pt) + ':' + e.nodes[k]] = [pt, e.nodes[k]]; });
     });
@@ -254,7 +262,7 @@ function simCircuit(host, U) {
     const dgeo = own(new THREE.BufferGeometry(), true); dgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(dropPts.length * 6), 3));
     drops = new THREE.LineSegments(dgeo, dropMat); drops.frustumCulled = false; sg.add(drops);
     edges.filter(e => e.kind === 'elem').forEach(e => elems.push(makeElem(e)));
-    if (!elems.some(o => o.id === st.sel)) st.sel = 'R1';
+    if (!validSel(st.sel)) st.sel = 'R1';
     syncChips();
   }
 
@@ -283,6 +291,9 @@ function simCircuit(host, U) {
     return o;
   }
   const nm = id => (id === 'R1' && (st.scene === 'single' || st.scene === 'rc')) ? 'R' : NAME[id];
+  // a selection is an element id ('R1', 'eps', …) or a wire section 'w<edge index>'
+  const wireOf = id => (typeof id === 'string' && id[0] === 'w' && edges[+id.slice(1)] && edges[+id.slice(1)].kind === 'wire') ? edges[+id.slice(1)] : null;
+  const validSel = id => !!wireOf(id) || elems.some(o => o.id === id);
 
   /* ── heights → transforms (on every change; every frame while the RC clock runs) ── */
   const _P = new THREE.Vector3(), _Q = new THREE.Vector3(), _D = new THREE.Vector3(), _M = new THREE.Vector3(), _Dh = new THREE.Vector3(), _T = new THREE.Vector3();
@@ -353,12 +364,15 @@ function simCircuit(host, U) {
     markers.visible = st.showMarkers;
     if (!st.showMarkers) return;
     const arr = markers.instanceMatrix.array;
+    st.elapsed += dt;
     edges.forEach(e => {
       if (!e.n || e.base + e.n > MAXM) return;
-      e.off = (((e.off + st.K * e.I * dt) % e.L) + e.L) % e.L;
+      e.off += st.K * e.I * dt;                              // unwrapped: distance the stream has moved along a → b
+      const ph = ((e.off % SP) + SP) % SP;
       for (let k = 0; k < e.n; k++) {
-        posAt(e, (e.off + k * e.L / e.n) % e.L, _p);
-        const i = 16 * (e.base + k); arr[i + 12] = _p[0]; arr[i + 13] = _p[1]; arr[i + 14] = _p[2];
+        const s = ph + k * SP, i = 16 * (e.base + k), on = s < e.L;
+        arr[i] = arr[i + 5] = arr[i + 10] = on ? 1 : 0;        // slots past the end of the edge are hidden
+        if (on) { posAt(e, s, _p); arr[i + 12] = _p[0]; arr[i + 13] = _p[1]; arr[i + 14] = _p[2]; }
       }
     });
     markers.instanceMatrix.needsUpdate = true;
@@ -375,7 +389,7 @@ function simCircuit(host, U) {
   }
 
   /* ── panel ── */
-  U.head('ห้องทดลองวงจรไฟฟ้า', 'ความสูงของสายเหนือพื้น = ศักย์ไฟฟ้า V · อนุภาคแทนประจุบวก วิ่งตามทิศกระแสสมมติ');
+  U.head('ห้องทดลองวงจรไฟฟ้า', 'ความสูงของสายเหนือพื้น = ศักย์ไฟฟ้า V · อนุภาคแทนประจุบวก วิ่งตามทิศกระแสตามข้อตกลง');
   U.group('เลือกวงจร');
   const sceneBox = U.seg({ value: st.scene, options: [['single', 'เดี่ยว'], ['series', 'อนุกรม'], ['parallel', 'ขนาน'], ['mixed', 'ผสม'], ['twoloop', 'สองวงรอบ'], ['rc', 'RC']] },
     v => { if (uiReady) setScene(v); });
@@ -430,10 +444,10 @@ function simCircuit(host, U) {
   U.check('อนุภาคประจุบวก (ความเร็ว ∝ กระแส)', st.showMarkers, v => { st.showMarkers = v; if (uiReady) placeMarkers(0); });
   U.check('ความสูงของสาย = ศักย์ไฟฟ้า', st.showHeight, v => { st.showHeight = v; if (uiReady) applyHeights(); });
 
-  const RO = U.readouts('ทั้งวงจร', [['Rt', 'ความต้านทานภายนอกรวม'], ['It', 'กระแสผ่านแบตเตอรี่ I'], ['Vt', 'V ระหว่างขั้วแบตเตอรี่ = ε − Ir']]);
+  const RO = U.readouts('ทั้งวงจร', [['Rt', 'ความต้านทานภายนอกรวม'], ['It', 'กระแสผ่านแบตเตอรี่ I'], ['Vt', 'ความต่างศักย์ระหว่างขั้ว V = ε − Ir']]);
   const roLab = k => RO[k].previousElementSibling;
 
-  U.group('ชิ้นที่เลือก · แตะในฉากหรือเลือกที่นี่');
+  U.group('ชิ้นหรือสายที่เลือก · แตะในฉากหรือเลือกที่นี่');
   const chips = U.html('<div class="chips ck-chips"></div>');
   chips.onclick = ev => { const b = ev.target.closest('button'); if (b) select(b.dataset.id); };
   const pickBox = U.html(`<div class="ro-box ck-pick"><div class="ro-title"></div>
@@ -449,7 +463,7 @@ function simCircuit(host, U) {
   U.note('อนุภาคที่วิ่งตามสายเป็น<b>ภาพเชิงคุณภาพ</b>ของประจุบวก: กระแสยิ่งมากอนุภาคยิ่งวิ่งเร็ว ที่จุดแยกอนุภาคแบ่งไปตามสัดส่วนกระแสของแต่ละสาขาแล้วรวมกลับ กระแสจึง<b>ไม่ได้ถูกใช้หมดไประหว่างทาง</b> สิ่งที่ลดลงเมื่อผ่านตัวต้านทานคือศักย์ (ความสูงของสาย) · ในลวดทองแดงจริง อิเล็กตรอนลอยเลื่อน (drift) ช้ากว่านี้มาก ราว 0.1 mm/s สำหรับกระแส 1 A ในลวดหน้าตัด 1 mm² และเคลื่อนสวนทิศกระแส · ถ้ากระแสมากจนอนุภาคเร็วเกินไป ความเร็วทุกเส้นจะถูกลดลงในสัดส่วนเดียวกัน');
 
   const hintEl = stage && stage.querySelector('.sim-hint');
-  if (hintEl) hintEl.textContent = 'แตะชิ้นในวงจร: อ่านค่า · ลาก: หมุน · ล้อเมาส์ / สองนิ้ว: ซูม';
+  if (hintEl) hintEl.textContent = 'แตะชิ้นหรือสายในวงจร: อ่านค่า · ลาก: หมุน · ล้อเมาส์ / สองนิ้ว: ซูม';
 
   function syncSliders() {
     Object.keys(SL).forEach(k => {
@@ -467,7 +481,7 @@ function simCircuit(host, U) {
     const s = st.sum, tw = st.scene === 'twoloop';
     roLab('Rt').textContent = tw ? 'R รวมภายนอก (มีสองแบตเตอรี่: ไม่มีค่าเดียว)' : 'ความต้านทานภายนอกรวม R';
     roLab('It').textContent = tw ? 'กระแสรวม I_ε + I_ε₂ (ผ่าน R₃)' : 'กระแสผ่านแบตเตอรี่ I';
-    roLab('Vt').textContent = tw ? 'V ระหว่างขั้วแบตเตอรี่ ε = ε − Ir' : 'V ระหว่างขั้วแบตเตอรี่ = ε − Ir';
+    roLab('Vt').textContent = tw ? 'ความต่างศักย์ระหว่างขั้วของแบตเตอรี่ ε: V = ε − Ir' : 'ความต่างศักย์ระหว่างขั้ว V = ε − Ir';
     RO.Rt.textContent = s.Rtotal === null ? '—' : q(s.Rtotal, 'Ω');
     RO.It.textContent = q(s.Itotal, 'A'); RO.Vt.textContent = q(s.Vterm, 'V');
     refreshPick();
@@ -480,13 +494,25 @@ function simCircuit(host, U) {
     }
   }
   function refreshPick() {
+    const w = wireOf(st.sel);
+    if (w) {
+      // a wire section: the current through it and its potential (one value along the whole section: ideal wire)
+      pickTitle.textContent = 'สายไฟ · ช่วงที่เลือก';
+      PK.I.textContent = q(w.I, 'A');
+      PL.V.textContent = 'ศักย์ไฟฟ้าของสาย V (เทียบขั้วลบแบตเตอรี่)'; PK.V.textContent = q(st.v[w.node], 'V');
+      PL.P.textContent = 'ความต่างศักย์ระหว่างปลายสาย'; PK.P.textContent = q(0, 'V');
+      dirEl.textContent = (Math.abs(w.I) < 1e-9 ? 'ไม่มีกระแสในช่วงสายนี้'
+        : w.I > 0 ? 'I บวก: กระแสไหลตามลูกศรสีเขียวบนสาย' : 'I ติดลบ: กระแสไหลสวนลูกศรสีเขียวบนสาย (ดูอนุภาคที่วิ่งย้อน)')
+        + ' · สายถือว่าไม่มีความต้านทาน ศักย์จึงเท่ากันตลอดช่วง';
+      return;
+    }
     const id = st.sel, o = st.el[id]; if (!o) return;
     const kind = KIND[id], n = nm(id);
     pickTitle.textContent = n + ' · ' + (kind === 'emf' ? 'แบตเตอรี่' : kind === 'cap' ? 'ตัวเก็บประจุ' : id[0] === 'r' ? 'ความต้านทานภายในแบตเตอรี่' : 'ตัวต้านทาน');
     PK.I.textContent = q(o.I, 'A');
     if (kind === 'emf') {
       const eps = st.p[id], rr = st.p.r;
-      PL.V.textContent = 'V ระหว่างขั้ว = ' + n + ' − I' + (id === 'eps2' ? 'r₂' : 'r'); PK.V.textContent = q(eps - o.I * rr, 'V');
+      PL.V.textContent = 'ความต่างศักย์ระหว่างขั้ว V = ' + n + ' − I' + (id === 'eps2' ? 'r₂' : 'r'); PK.V.textContent = q(eps - o.I * rr, 'V');
       PL.P.textContent = 'กำลังที่แบตเตอรี่ให้ P = ' + n + 'I'; PK.P.textContent = q(o.P, 'W');
     } else if (kind === 'cap') {
       PL.V.textContent = 'V คร่อมตัวเก็บประจุ'; PK.V.textContent = q(o.V, 'V');
@@ -497,8 +523,8 @@ function simCircuit(host, U) {
     }
     const I = o.I;
     dirEl.textContent = Math.abs(I) < 1e-9 ? 'ไม่มีกระแสผ่านชิ้นนี้ในตอนนี้'
-      : kind === 'emf' ? (I > 0 ? 'กระแสไหลผ่านแบตเตอรี่จากขั้ว − ไปขั้ว +: แบตเตอรี่จ่ายพลังงานให้วงจร (V ระหว่างขั้วน้อยกว่า ' + n + ')'
-        : 'I ติดลบ: กระแสไหลย้อนผ่านแบตเตอรี่จากขั้ว + ไปขั้ว −: แบตเตอรี่นี้รับพลังงาน (ถูกอัดประจุ) และ V ระหว่างขั้วมากกว่า ' + n)
+      : kind === 'emf' ? (I > 0 ? 'กระแสไหลผ่านแบตเตอรี่จากขั้ว − ไปขั้ว +: แบตเตอรี่จ่ายพลังงานให้วงจร (ความต่างศักย์ระหว่างขั้วน้อยกว่า ' + n + ')'
+        : 'I ติดลบ: กระแสไหลย้อนผ่านแบตเตอรี่จากขั้ว + ไปขั้ว −: แบตเตอรี่นี้รับพลังงาน (ถูกอัดประจุ) และความต่างศักย์ระหว่างขั้วมากกว่า ' + n)
       : (I > 0 ? 'I บวก: กระแสไหลตามลูกศรเล็กเหนือชิ้นนี้' : 'I ติดลบ: กระแสไหลย้อนสวนลูกศรเล็กเหนือชิ้นนี้ (ดูอนุภาคที่วิ่งย้อน)');
   }
   function drawChart() {
@@ -550,16 +576,35 @@ function simCircuit(host, U) {
     update();
   }
   function select(id) {
-    if (!elems.some(o => o.id === id)) return;
+    if (!validSel(id)) return;
     st.sel = id;
     chips.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.id === id));
     refreshPick();
   }
+  // end points of drawn wire cylinder si, read back from its instance matrix (world-local coordinates)
+  const _m4 = new THREE.Matrix4(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
+  function segEnds(si, A, B) {
+    wires.getMatrixAt(si, _m4); const m = _m4.elements;
+    const sy = Math.hypot(m[4], m[5], m[6]), h = sy > 0 ? (sy - WR) / 2 / sy : 0;
+    A.set(m[12] - m[4] * h, m[13] - m[5] * h, m[14] - m[6] * h); B.set(m[12] + m[4] * h, m[13] + m[5] * h, m[14] + m[6] * h);
+  }
   const _box = new THREE.Box3(), _c = new THREE.Vector3();
   function syncSel() {
-    const o = elems.find(x => x.id === st.sel);
-    selBox.visible = !!o; if (!o) return;
-    _box.setFromObject(o.g); _box.getCenter(selBox.position); _box.getSize(_c);
+    const o = elems.find(x => x.id === st.sel), w = wireOf(st.sel);
+    selBox.visible = !!(o || w); selArrow.visible = !!w;
+    if (o) _box.setFromObject(o.g);
+    else if (w) {
+      // box around the section, arrow on its longest piece pointing along the polyline (I > 0 direction)
+      _box.makeEmpty(); let best = -1;
+      for (let k = 0; k < w.pts.length - 1; k++) {
+        segEnds(w.s0 + k, _a, _b);
+        _box.expandByPoint(world.localToWorld(_a.clone())).expandByPoint(world.localToWorld(_b.clone()));
+        const len = _a.distanceTo(_b);
+        if (len > best) { best = len; selArrow.position.addVectors(_a, _b).multiplyScalar(0.5); selArrow.position.y += 0.4; if (len > 1e-9) selArrow.quaternion.setFromUnitVectors(AY, _b.sub(_a).normalize()); }
+      }
+      _box.expandByScalar(0.15);
+    } else return;
+    _box.getCenter(selBox.position); _box.getSize(_c);
     selBox.scale.set(_c.x + 0.3, _c.y + 0.3, _c.z + 0.3);
   }
 
@@ -570,15 +615,28 @@ function simCircuit(host, U) {
     const r = canvas.getBoundingClientRect();
     ndc.set((cx - r.left) / r.width * 2 - 1, -(cy - r.top) / r.height * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hits = ray.intersectObjects(elems.map(o => o.g), true);
-    if (hits.length) return hits[0].object.userData.id;
+    // the wire cylinder of an element edge runs inside the element, so a hit on it reads the element
+    const idOfSeg = si => { const ei = segEdge[si], e = edges[ei]; return !e ? null : e.kind === 'elem' ? e.id : 'w' + ei; };
+    const hits = ray.intersectObjects([...elems.map(o => o.g), wires], true);
+    for (const h of hits) {
+      const id = h.object === wires ? idOfSeg(h.instanceId) : h.object.userData.id;
+      if (id) return id;
+    }
+    // nothing under the pointer: nearest element centre or wire piece on screen within a slop
     const slop = type !== 'mouse' || coarse ? 24 : 8;
+    const px = v => { v.project(camera); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; };
     let best = null, bd = Infinity;
     elems.forEach(o => {
-      _box.setFromObject(o.g); _box.getCenter(_s); _s.project(camera);
-      const d = Math.hypot(r.left + (_s.x + 1) / 2 * r.width - cx, r.top + (1 - _s.y) / 2 * r.height - cy);
+      _box.setFromObject(o.g); _box.getCenter(_s); const [x, y] = px(_s);
+      const d = Math.hypot(x - cx, y - cy);
       if (d <= slop && d < bd) { bd = d; best = o.id; }
     });
+    for (let si = 0; si < wires.count; si++) {
+      segEnds(si, _a, _b); const [ax, ay] = px(world.localToWorld(_a)), [bx, by] = px(world.localToWorld(_b));
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / L2)) : 0;
+      const d = Math.hypot(ax + u * dx - cx, ay + u * dy - cy);
+      if (d <= slop && d < bd) { bd = d; best = idOfSeg(si); }
+    }
     return best;
   }
   let down = null;
@@ -632,6 +690,27 @@ function simCircuit(host, U) {
       _box.setFromObject(o.g); _box.getCenter(_s); _s.project(camera);
       const r = canvas.getBoundingClientRect();
       return { x: r.left + (_s.x + 1) / 2 * r.width, y: r.top + (1 - _s.y) / 2 * r.height };
+    },
+    // what is drawn: every edge with its layout end points (schematic X, Y), current, marker phase, the drawn pieces
+    // read back from the wire instance matrices (capacitor: its two plates) and the visible markers' positions
+    edges: () => edges.map((e, ei) => {
+      const segs = [];
+      if (e.cap) { const o = elems.find(x => x.id === 'C'); segs.push([...o.pa.position.toArray(), ...o.pb.position.toArray()]); }
+      else for (let k = 0; k < e.pts.length - 1; k++) { segEnds(e.s0 + k, _a, _b); segs.push([..._a.toArray(), ..._b.toArray()]); }
+      const mk = [], arr = markers.instanceMatrix.array;
+      for (let k = 0; k < e.n; k++) { const i = 16 * (e.base + k); if (arr[i]) mk.push([arr[i + 12], arr[i + 13], arr[i + 14]]); }
+      return { i: ei, kind: e.kind, id: e.kind === 'elem' ? e.id : 'w' + ei, nodes: e.nodes, pts: e.pts, I: e.I, off: e.off, L: e.L, segs, markers: mk };
+    }),
+    spacing: SP,
+    elapsed: () => st.elapsed,
+    screenOfEdge(ei) {
+      const e = edges[ei]; if (!e || e.cap) return null;
+      let best = -1, mid = new THREE.Vector3();
+      for (let k = 0; k < e.pts.length - 1; k++) { segEnds(e.s0 + k, _a, _b); const len = _a.distanceTo(_b); if (len > best) { best = len; mid.addVectors(_a, _b).multiplyScalar(0.5); } }
+      world.updateMatrixWorld(); camera.updateMatrixWorld();
+      world.localToWorld(mid).project(camera);
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + (mid.x + 1) / 2 * r.width, y: r.top + (1 - mid.y) / 2 * r.height };
     },
     colors: () => [wireMat.color.getHexString(), markerMat.color.getHexString(), battMat.color.getHexString()],
     frames: () => frames,
