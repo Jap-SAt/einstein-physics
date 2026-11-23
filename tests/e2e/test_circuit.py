@@ -779,4 +779,26 @@ async def test_cross_links():
             await s.close()
 
 
+async def test_rc_pause_readouts_exact():
+    # pausing between throttle ticks must leave the panel equal to the live state, not up to 1/15 s behind
+    s = await open_sim()
+    try:
+        await s.page.evaluate("() => __ck.scene('rc')")
+        for k in range(8):
+            await s.page.wait_for_timeout(173 + 17 * k)
+            r = await s.page.evaluate("""async () => { document.querySelector('#tPlay').click();
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                const h = __ck.rc(), g = k => document.querySelector('#panel [data-k="' + k + '"]').textContent;
+                const out = { h, t: g('t'), vc: g('vc'), i: g('i') };
+                document.querySelector('#tPlay').click();
+                return out; }""")
+            h = r['h']
+            assert near(parse_si(r['t'], 's'), h['t'], 0.01), (k, r['t'], h['t'])
+            assert near(parse_si(r['vc'], 'V'), h['vC'], 0.01), (k, r['vc'], h['vC'])
+            assert near(parse_si(r['i'], 'A'), h['i'], 0.01), (k, r['i'], h['i'])
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())

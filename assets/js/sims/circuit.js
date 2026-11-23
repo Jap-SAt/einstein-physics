@@ -177,7 +177,7 @@ function simCircuit(host, U) {
   const rcAt = t => st.rc.mode === 'charge' ? Circuit.rcState(st.p, 'charge', t + st.rc.t0) : Circuit.rcState(st.p, 'discharge', t, st.rc.v0);
   function restartRC(why) {
     st.rc.t = 0; st.rc.t0 = 0; st.rc.v0 = st.p.eps;
-    if (why) say('ค่าเปลี่ยน: เริ่มจับเวลาใหม่ที่ t = 0 ' + (st.rc.mode === 'charge' ? '(ตัวเก็บประจุว่าง)' : '(ตัวเก็บประจุเต็ม ความต่างศักย์คร่อมเท่ากับ ε)'));
+    if (why) say('ค่าเปลี่ยน: เริ่มจับเวลาใหม่ที่ t = 0 ' + (st.rc.mode === 'charge' ? '(ตัวเก็บประจุว่าง)' : '(ตัวเก็บประจุเต็ม ความต่างศักย์คร่อมตัวเก็บประจุเท่ากับ ε)'));
   }
   function switchTo(mode) {
     if (mode !== 'charge' && mode !== 'discharge') return;
@@ -738,7 +738,11 @@ function simCircuit(host, U) {
   };
 
   return {
-    toggle() { st.play = !st.play; return st.play; },
+    toggle() {
+      st.play = !st.play;
+      if (!st.play && st.scene === 'rc') { uiAcc = 0; refresh(); }   // paused between throttle ticks: panel and chart must match the 3D scene
+      return st.play;
+    },
     dispose() {
       clearTimeout(msgTimer);
       if (chartRO) chartRO.disconnect(); else window.removeEventListener('resize', onWinResize);
