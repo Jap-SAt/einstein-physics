@@ -264,6 +264,31 @@ async def test_rc_curve():
         await s.close()
 
 
+async def test_rc_resumed_charge_after_partial_discharge():
+    s = await open_sim()
+    try:
+        r = await s.page.evaluate("""() => { __ck.scene('rc'); __ck.switchTo('charge');
+            const p = __ck.params(), td = p.R1 * p.C, tc = (p.R1 + p.r) * p.C;
+            __ck.setTime(80 * tc); __ck.switchTo('discharge'); __ck.setTime(td);
+            const before = __ck.rc(), txt1 = document.querySelector('#panel [data-k="vc"]').textContent;
+            __ck.switchTo('charge');
+            const after = __ck.rc(), txt2 = document.querySelector('#panel [data-k="vc"]').textContent;
+            __ck.setTime(tc); const at = __ck.rc();
+            return { p, before, after, at, txt1, txt2, tc }; }""")
+        import math
+        eps = r['p']['eps']
+        v_now = r['before']['vC']
+        assert close(v_now, eps / math.e), r        # discharged for tau_d from full
+        assert r['before']['mode'] == 'discharge' and r['after']['mode'] == 'charge', r
+        assert close(r['after']['vC'], v_now, 1e-6), ('V_C continuous across the switch', r)
+        assert close(parse_si(r['txt1'], 'V'), parse_si(r['txt2'], 'V'), 0.01), (r['txt1'], r['txt2'])
+        assert close(r['at']['tau'], r['tc']), r
+        assert close(r['at']['vC'], eps - (eps - v_now) / math.e, 0.005), r
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 async def test_rc_restart_on_change():
     s = await open_sim()
     try:

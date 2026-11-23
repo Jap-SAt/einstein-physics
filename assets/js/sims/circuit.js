@@ -152,7 +152,7 @@ function simCircuit(host, U) {
   const wires = new THREE.InstancedMesh(cylGeo, wireMat, MAXW); wires.count = 0; wires.frustumCulled = false; world.add(wires);
   const markers = new THREE.InstancedMesh(ballGeo, markerMat, MAXM); markers.count = 0; markers.frustumCulled = false; world.add(markers);
 
-  // floor grid + potential ruler (back left): one tick per 4 V, labels every 8 V
+  // floor grid + potential ruler (back right): one tick per 4 V, labels every 8 V
   const grid = new THREE.GridHelper(26, 13, gridHex()[0], gridHex()[1]); grid.position.y = FLOOR; own(grid.geometry); own(grid.material); world.add(grid);
   const ruler = new THREE.Group(); world.add(ruler);
   {
@@ -177,7 +177,7 @@ function simCircuit(host, U) {
   const rcAt = t => st.rc.mode === 'charge' ? Circuit.rcState(st.p, 'charge', t + st.rc.t0) : Circuit.rcState(st.p, 'discharge', t, st.rc.v0);
   function restartRC(why) {
     st.rc.t = 0; st.rc.t0 = 0; st.rc.v0 = st.p.eps;
-    if (why) say('ค่าเปลี่ยน: เริ่มจับเวลาใหม่ที่ t = 0 ' + (st.rc.mode === 'charge' ? '(ตัวเก็บประจุว่าง)' : '(ตัวเก็บประจุเต็ม V_C = ε)'));
+    if (why) say('ค่าเปลี่ยน: เริ่มจับเวลาใหม่ที่ t = 0 ' + (st.rc.mode === 'charge' ? '(ตัวเก็บประจุว่าง)' : '(ตัวเก็บประจุเต็ม ความต่างศักย์คร่อมเท่ากับ ε)'));
   }
   function switchTo(mode) {
     if (mode !== 'charge' && mode !== 'discharge') return;
@@ -188,7 +188,7 @@ function simCircuit(host, U) {
     if (mode === 'charge') st.rc.t0 = -tauNow() * Math.log(Math.max(1e-12, 1 - vNow / st.p.eps));
     if (modeBox) modeBox.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === mode));
     if (st.scene === 'rc') { buildScene(); update(); }
-    say(mode === 'charge' ? 'สับสวิตช์ไปที่แบตเตอรี่: ชาร์จต่อจาก V_C ตอนนี้ เริ่มจับเวลาใหม่ที่ t = 0' : 'สับสวิตช์ตัดแบตเตอรี่: ตัวเก็บประจุคายประจุผ่าน R เริ่มจับเวลาใหม่ที่ t = 0');
+    say(mode === 'charge' ? 'สับสวิตช์ไปที่แบตเตอรี่: ชาร์จต่อจากความต่างศักย์คร่อมตัวเก็บประจุตอนนี้ เริ่มจับเวลาใหม่ที่ t = 0' : 'สับสวิตช์ตัดแบตเตอรี่: ตัวเก็บประจุคายประจุผ่าน R เริ่มจับเวลาใหม่ที่ t = 0');
   }
 
   /* ── solve: potentials (node → V), element currents and readouts ── */
@@ -297,7 +297,7 @@ function simCircuit(host, U) {
 
   /* ── heights → transforms (on every change; every frame while the RC clock runs) ── */
   const _P = new THREE.Vector3(), _Q = new THREE.Vector3(), _D = new THREE.Vector3(), _M = new THREE.Vector3(), _Dh = new THREE.Vector3(), _T = new THREE.Vector3();
-  const _o = new THREE.Object3D(), AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
+  const _qa = new THREE.Quaternion(), _c1 = new THREE.Color(), _c2 = new THREE.Color(), _o = new THREE.Object3D(), AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
   function applyHeights() {
     let si = 0;
     edges.forEach(e => {
@@ -331,18 +331,18 @@ function simCircuit(host, U) {
       const g = Math.min(1, Math.max(0, st.el[o.id].P / REF[st.scene].P));
       o.mat.emissiveIntensity = 0.75 * g; o.mat.color.copy(o.base).lerp(o.hot, 0.7 * g);
     } else if (o.kind === 'emf') {
-      const q = new THREE.Quaternion().setFromUnitVectors(AY, _D);
+      const q = _qa.setFromUnitVectors(AY, _D);
       o.body.position.copy(_M); o.body.quaternion.copy(q); o.body.scale.set(0.4, len * 0.78, 0.4);
       o.band.position.copy(_M).addScaledVector(_D, len * 0.3); o.band.quaternion.copy(q); o.band.scale.set(0.41, len * 0.18, 0.41);
       o.nub.position.copy(_M).addScaledVector(_D, len * 0.39 + 0.1); o.nub.quaternion.copy(q); o.nub.scale.set(0.15, 0.2, 0.15);
       _T.set(0.62 * side(A), 0.1, 0);
       o.plus.position.copy(_Q).add(_T); o.minus.position.copy(_P).add(_T);
     } else {
-      const q = new THREE.Quaternion().setFromUnitVectors(AZ, _Dh);
+      const q = _qa.setFromUnitVectors(AZ, _Dh);
       o.pa.position.copy(_P); o.pb.position.copy(_Q);
       [o.pa, o.pb].forEach(m => { m.quaternion.copy(q); m.scale.set(1.3, 1.0, 0.1); });
       const f = Math.min(1, Math.max(0, st.el.C.V / st.p.eps));
-      plateA.color.setHex(P.plate).lerp(new THREE.Color(P.pos), f); plateB.color.setHex(P.plate).lerp(new THREE.Color(P.neg), f);
+      plateA.color.setHex(P.plate).lerp(_c1.setHex(P.pos), f); plateB.color.setHex(P.plate).lerp(_c2.setHex(P.neg), f);
       top = 0.5 + Math.abs(_P.y - _Q.y) / 2;
     }
     o.arrow.position.copy(_M); o.arrow.position.y += top + 0.32;
@@ -419,7 +419,7 @@ function simCircuit(host, U) {
     <div class="ctl"><div class="seg ck-mode"><button data-v="charge">ชาร์จ (ต่อแบตเตอรี่)</button><button data-v="discharge">คายประจุ (ผ่าน R)</button></div></div>
     <div class="chips"><button class="ck-restart">↺ เริ่มจับเวลาใหม่</button></div>
     <div class="ck-msg" role="status" aria-live="polite"></div>
-    <canvas class="chart ck-chart" aria-label="กราฟ V_C เทียบกับเวลา"></canvas>
+    <canvas class="chart ck-chart" aria-label="กราฟความต่างศักย์คร่อมตัวเก็บประจุเทียบกับเวลา"></canvas>
     <div class="legend"><span><i style="background:${CH.acc}"></i>V<sub>C</sub>(t) ที่ผ่านมา</span><span><i style="background:${CH.muted}"></i>ทั้งช่วง 0 ถึง 5τ</span><span>เส้นประตั้ง: t = τ</span></div>
     <div class="ro-box"><div class="ro-title">ตัวเก็บประจุ</div>
       <div class="ro"><span>เวลา t</span><span class="mono" data-k="t">—</span></div>
@@ -460,7 +460,7 @@ function simCircuit(host, U) {
   const pickTitle = pickBox.querySelector('.ro-title'), dirEl = pickBox.querySelector('.ck-dir');
 
   U.note('ตัวต้านทานยิ่งสว่าง (สีส้ม) ยิ่งเปลี่ยนพลังงานไฟฟ้าเป็นความร้อนมาก (P = I²R เทียบกันในฉากเดียวกัน) · ความสูงของสายวัดจากขั้วลบของแบตเตอรี่ (0 V) สูง 1 หน่วย = 4 V ตามไม้บรรทัดด้านหลังขวา: แบตเตอรี่ยกศักย์ขึ้น ε แล้วศักย์ลดลงเมื่อผ่าน r และตัวต้านทาน สายเส้นเดียวกันสูงเท่ากันตลอดเพราะถือว่าสายไม่มีความต้านทาน · ลูกศรเล็กเหนือแต่ละชิ้นคือทิศอ้างอิงของ I: ค่า I ติดลบแปลว่ากระแสจริงไหลสวนลูกศร');
-  U.note('อนุภาคที่วิ่งตามสายเป็น<b>ภาพเชิงคุณภาพ</b>ของประจุบวก: กระแสยิ่งมากอนุภาคยิ่งวิ่งเร็ว ที่จุดแยกอนุภาคแบ่งไปตามสัดส่วนกระแสของแต่ละสาขาแล้วรวมกลับ กระแสจึง<b>ไม่ได้ถูกใช้หมดไประหว่างทาง</b> สิ่งที่ลดลงเมื่อผ่านตัวต้านทานคือศักย์ (ความสูงของสาย) · ในลวดทองแดงจริง อิเล็กตรอนลอยเลื่อน (drift) ช้ากว่านี้มาก ราว 0.1 mm/s สำหรับกระแส 1 A ในลวดหน้าตัด 1 mm² และเคลื่อนสวนทิศกระแส · ถ้ากระแสมากจนอนุภาคเร็วเกินไป ความเร็วทุกเส้นจะถูกลดลงในสัดส่วนเดียวกัน');
+  U.note('อนุภาคที่วิ่งตามสายเป็น<b>ภาพเชิงคุณภาพ</b>ของประจุบวก: กระแสยิ่งมากอนุภาคยิ่งวิ่งเร็ว ที่จุดแยกอนุภาคแบ่งไปตามสัดส่วนกระแสของแต่ละสาขาแล้วรวมกลับ กระแสจึง<b>ไม่ได้ถูกใช้หมดไประหว่างทาง</b> สิ่งที่ลดลงเมื่อผ่านตัวต้านทานคือศักย์ (ความสูงของสาย) · ในลวดทองแดงจริง อิเล็กตรอนลอยเลื่อน (drift) ช้ากว่านี้มาก ราว 0.07 mm/s สำหรับกระแส 1 A ในลวดหน้าตัด 1 mm² และเคลื่อนสวนทิศกระแส · ถ้ากระแสมากจนอนุภาคเร็วเกินไป ความเร็วทุกเส้นจะถูกลดลงในสัดส่วนเดียวกัน');
 
   const hintEl = stage && stage.querySelector('.sim-hint');
   if (hintEl) hintEl.textContent = 'แตะชิ้นหรือสายในวงจร: อ่านค่า · ลาก: หมุน · ล้อเมาส์ / สองนิ้ว: ซูม';
@@ -480,7 +480,7 @@ function simCircuit(host, U) {
   function refresh() {
     const s = st.sum, tw = st.scene === 'twoloop';
     roLab('Rt').textContent = tw ? 'R รวมภายนอก (มีสองแบตเตอรี่: ไม่มีค่าเดียว)' : 'ความต้านทานภายนอกรวม R';
-    roLab('It').textContent = tw ? 'กระแสรวม I_ε + I_ε₂ (ผ่าน R₃)' : 'กระแสผ่านแบตเตอรี่ I';
+    roLab('It').innerHTML = tw ? 'กระแสรวม I<sub>ε</sub> + I<sub>ε₂</sub> (ผ่าน R₃)' : 'กระแสผ่านแบตเตอรี่ I';
     roLab('Vt').textContent = tw ? 'ความต่างศักย์ระหว่างขั้วของแบตเตอรี่ ε: V = ε − Ir' : 'ความต่างศักย์ระหว่างขั้ว V = ε − Ir';
     RO.Rt.textContent = s.Rtotal === null ? '—' : q(s.Rtotal, 'Ω');
     RO.It.textContent = q(s.Itotal, 'A'); RO.Vt.textContent = q(s.Vterm, 'V');
@@ -527,8 +527,19 @@ function simCircuit(host, U) {
         : 'I ติดลบ: กระแสไหลย้อนผ่านแบตเตอรี่จากขั้ว + ไปขั้ว −: แบตเตอรี่นี้รับพลังงาน (ถูกอัดประจุ) และความต่างศักย์ระหว่างขั้วมากกว่า ' + n)
       : (I > 0 ? 'I บวก: กระแสไหลตามลูกศรเล็กเหนือชิ้นนี้' : 'I ติดลบ: กระแสไหลย้อนสวนลูกศรเล็กเหนือชิ้นนี้ (ดูอนุภาคที่วิ่งย้อน)');
   }
+  // chart size is cached: reading clientWidth/Height every frame would force a synchronous layout
+  let chartW = 0, chartH = 0;
+  const readChartSize = () => { chartW = cv.clientWidth; chartH = cv.clientHeight; };
+  let chartRO = null;
+  if (typeof ResizeObserver === 'function') {
+    chartRO = new ResizeObserver(() => { readChartSize(); if (st.scene === 'rc') drawChart(); });
+    chartRO.observe(cv);
+  }
+  const onWinResize = () => { readChartSize(); if (st.scene === 'rc') drawChart(); };
+  if (!chartRO) window.addEventListener('resize', onWinResize);
   function drawChart() {
-    const W = cv.clientWidth, Hh = cv.clientHeight; if (!W || !Hh) return;
+    if (!chartW || !chartH) readChartSize();   // normally filled by the ResizeObserver; this read happens only until the first size is known
+    const W = chartW, Hh = chartH; if (!W || !Hh) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, Hh);
@@ -536,7 +547,9 @@ function simCircuit(host, U) {
     const X = v => l + Math.min(1, v / TT) * (W - l - r), Y = v => t + (1 - v / eps) * (Hh - t - b);
     g.font = '10px "JetBrains Mono", monospace'; g.lineWidth = 1; g.strokeStyle = CH.line; g.fillStyle = CH.muted;
     g.textAlign = 'right'; [[0, '0'], [eps, 'ε']].forEach(([v, s]) => { g.beginPath(); g.moveTo(l, Y(v)); g.lineTo(W - r, Y(v)); g.stroke(); g.fillText(s, l - 6, Y(v) + 3); });
-    g.fillText('V_C', l - 4, 9);
+    // axis label V with a subscript C
+    g.font = '7px "JetBrains Mono", monospace'; const wC = g.measureText('C').width; g.fillText('C', l - 4, 12);
+    g.font = '10px "JetBrains Mono", monospace'; g.fillText('V', l - 4 - wC - 0.5, 9);
     g.textAlign = 'center';
     for (let k = 0; k <= 5; k++) g.fillText(k === 0 ? '0' : (k === 1 ? '' : k) + 'τ', X(k * tau), Hh - 8);
     g.strokeStyle = CH.muted; g.setLineDash([3, 3]);
@@ -656,12 +669,18 @@ function simCircuit(host, U) {
   setScene(st.scene, true);
   uiReady = true; built = true;
 
+  let uiAcc = 0;
   host.onUpdate(dt => {
     frames++;
     if (st.play) {
       if (st.scene === 'rc') {
         const tau = tauNow();
-        if (st.rc.t < T_END * tau) { st.rc.t = Math.min(T_END * tau, st.rc.t + dt * tau / T_SCREEN); compute(); applyHeights(); refresh(); }
+        if (st.rc.t < T_END * tau) {
+          st.rc.t = Math.min(T_END * tau, st.rc.t + dt * tau / T_SCREEN); compute(); applyHeights();
+          // scene animation runs every frame; panel text and chart (many rcState calls) at most ~15 Hz
+          uiAcc += dt;
+          if (uiAcc >= 1 / 15 || st.rc.t >= T_END * tau) { uiAcc = 0; refresh(); }
+        }
       }
       placeMarkers(dt);
     }
@@ -722,6 +741,7 @@ function simCircuit(host, U) {
     toggle() { st.play = !st.play; return st.play; },
     dispose() {
       clearTimeout(msgTimer);
+      if (chartRO) chartRO.disconnect(); else window.removeEventListener('resize', onWinResize);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onCancel);
