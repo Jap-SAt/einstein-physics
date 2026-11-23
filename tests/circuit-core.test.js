@@ -15,7 +15,7 @@ function mulberry32(a) {
 
 test('series total', () => {
   const s = Circuit.solve('series', { eps: 12, r: 0.5, R1: 2, R2: 4, R3: 6, C: 1e-3 });
-  near(s.Rtotal, 12.5);
+  near(s.Rtotal, 12);
   near(s.Itotal, 0.96);
   ['R1', 'R2', 'R3'].forEach((id, k) => {
     near(s.elems[id].I, 0.96);

@@ -64,7 +64,7 @@ var Circuit = (function () {
   }
 
   function externalR(sceneId, p) {
-    if (sceneId === 'series') return p.R1 + p.R2 + p.R3 + p.r; // brief: series total includes r (other scenes exclude it)
+    if (sceneId === 'series') return p.R1 + p.R2 + p.R3;
     if (sceneId === 'parallel') return 1 / (1 / p.R1 + 1 / p.R2 + 1 / p.R3);
     if (sceneId === 'mixed') return p.R1 + p.R2 * p.R3 / (p.R2 + p.R3);
     if (sceneId === 'twoloop') return null; // no single equivalent resistance with two sources
