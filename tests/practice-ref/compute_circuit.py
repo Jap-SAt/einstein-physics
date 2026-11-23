@@ -105,7 +105,7 @@ L2 = {
     'circuit-2-05': (two_loop_I2, [dict(e1=12.0, R1=2.0, e2=4.5, R2=1.5, R3=6), dict(e1=6.0, R1=3.0, e2=21.0, R2=4.5, R3=2),
                                    dict(e1=10.5, R1=1.0, e2=9.0, R2=2.0, R3=12)]),
     'circuit-2-06': (heater_power, [dict(hi=0, P1=60, P2=20), dict(hi=1, P1=100, P2=40), dict(hi=0, P1=30, P2=15)]),
-    'circuit-2-07': (rc_voltage, [dict(eps=12.0, r=1.0, R=9, C=2.0, t=16), dict(eps=18.0, r=2.5, R=4, C=4.5, t=40),
+    'circuit-2-07': (rc_voltage, [dict(eps=12.0, r=1.0, R=9, C=2.0, t=16), dict(eps=18.0, r=2.5, R=4, C=4.5, t=20),
                                   dict(eps=7.5, r=0.5, R=15, C=1.0, t=6)]),
 }
 
