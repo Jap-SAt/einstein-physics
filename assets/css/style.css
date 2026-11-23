@@ -384,6 +384,13 @@ input[type=range]:disabled{opacity:.45}
 .ef-dv{border-radius:5px;padding:0 3px;transition:background-color .4s,color .4s}
 .ef-dv.flash{background:#f6d58a;color:#17191e}
 html.dark .ef-dv.flash{background:#8a6a1e;color:#fff}
+/* circuit lab */
+.ck-desc{font-size:13px;color:var(--text2);margin:8px 0 2px;line-height:1.6}
+.ck-msg{font-size:12.5px;line-height:1.55;color:var(--muted);min-height:2.2em;margin:8px 0}
+.ck-chips button.on{border-color:var(--macc);color:var(--macc);font-weight:600}
+.ck-chips{margin:8px 0 0}
+.ck-dir{font-size:12.5px;color:var(--text2);line-height:1.55;padding:6px 0 4px;border-top:1px solid rgba(0,0,0,.05)}
+.ck-chart{height:160px;margin-top:4px}
 
 /* ── phones: grid items may shrink below their content width (home overflowed at 390 px) ── */
 .hero>div{min-width:0}
