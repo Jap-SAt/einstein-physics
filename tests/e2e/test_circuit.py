@@ -58,8 +58,10 @@ async def test_circuit_tabs():
         await s.page.goto(base + '#circuit-sim')
         await s.page.wait_for_selector('#stage canvas')
         await s.page.goto(base + '#circuit-quiz')
-        await s.page.wait_for_timeout(300)
-        assert 'แบบฝึกหัดบทนี้กำลังจัดทำ' in await s.page.inner_text('#tabview')
+        await s.page.wait_for_selector('.px-row')          # Task 5: the practice set replaced the placeholder
+        assert 'แบบฝึกหัดบทนี้กำลังจัดทำ' not in await s.page.inner_text('#tabview')
+        dots = await s.page.evaluate("() => [...document.querySelectorAll('.px-row')].map(r => r.querySelectorAll('.px-dot').length)")
+        assert dots == [7, 7, 6], dots
         assert not s.errors, s.errors
     finally:
         await s.close()
