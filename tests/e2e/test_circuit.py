@@ -724,4 +724,34 @@ async def test_lecture_content():
         await s.close()
 
 
+# ───────────── Task 6: cross-links ─────────────
+
+async def section_top(s, sec):
+    return await s.page.evaluate("""(id) => { const h = document.querySelector('#lec #' + id);
+        return h ? [h.getBoundingClientRect().top, innerHeight] : null; }""", sec)
+
+
+async def test_cross_links():
+    # estat s5 -> circuit s5 (RC) and s3 (series/parallel contrast); circuit s1 -> estat s4
+    for src, href, dest, sec in [('estat', '#circuit?s=s5', '#circuit', 's5'),
+                                 ('estat', '#circuit?s=s3', '#circuit', 's3'),
+                                 ('circuit', '#estat?s=s4', '#estat', 's4')]:
+        s = await open_page(src)
+        try:
+            sel = '.lec a[href="%s"]' % href
+            await s.page.wait_for_selector(sel, state='attached')
+            loc = s.page.locator(sel).first
+            await loc.scroll_into_view_if_needed()
+            await loc.click()
+            await s.page.wait_for_timeout(1200)
+            assert await s.page.evaluate("() => location.hash") == href
+            tab = await s.page.evaluate("() => document.querySelector('.tabs a.on').getAttribute('href')")
+            assert tab == dest, tab
+            st = await section_top(s, sec)
+            assert st and 64 <= st[0] < st[1], (sec, st)
+            assert not s.errors, s.errors
+        finally:
+            await s.close()
+
+
 run_tests(globals())
