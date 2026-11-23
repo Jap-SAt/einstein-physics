@@ -12,12 +12,12 @@ async def test_home_order():
         r = await s.page.evaluate("""() => [...document.querySelectorAll('a.pick')].map(a => ({
             href: a.getAttribute('href'), t: a.querySelector('.t').childNodes[0].textContent.trim() }))""")
         hrefs = [x['href'] for x in r]
-        assert hrefs == ['#mech', '#thermo', '#waves', '#estat', '#particle', '#em', '#atom', '#nuclear'], hrefs
+        assert hrefs == ['#mech', '#thermo', '#waves', '#estat', '#circuit', '#particle', '#em', '#atom', '#nuclear'], hrefs
         mods = await s.page.evaluate("() => MODS.map(m => [m.id, m.no, m.title])")
-        assert [m[1] for m in mods] == ['0%d' % i for i in range(1, 9)], mods
+        assert [m[1] for m in mods] == ['0%d' % i for i in range(1, 10)], mods
         by = {m[0]: m for m in mods}
         assert by['estat'][1] == '04' and by['estat'][2] == 'ไฟฟ้าสถิต', by['estat']
-        assert by['particle'][1] == '05', by['particle']
+        assert by['particle'][1] == '06', by['particle']
         assert by['waves'][2] == 'คลื่นและทัศนศาสตร์'
         sub = await s.page.evaluate("() => document.querySelector('a.pick[href=\"#estat\"] .s').textContent.trim()")
         assert sub == 'ประจุ · กฎของคูลอมบ์ · สนามและศักย์ · ตัวเก็บประจุ', sub

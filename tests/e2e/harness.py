@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 PAGE = 'file://' + os.path.join(ROOT, 'index.html')
-CHROME = '/usr/bin/google-chrome'
+CHROME = os.environ.get('CHROME_PATH', '/usr/bin/google-chrome')
 ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required']
 
 

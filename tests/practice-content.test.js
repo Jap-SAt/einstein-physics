@@ -297,6 +297,21 @@ for (const id of chapters) {
   });
 }
 
+test('circuit: practice texts stay out of magnetism and induction', { skip: !chapters.includes('circuit') }, () => {
+  const { items, PC } = load('circuit');
+  const BANNED = ['แม่เหล็ก', 'เหนี่ยวนำ', 'มอเตอร์'];
+  for (const it of items) {
+    const rng = PC.makeRng(2024);
+    const draws = it.level === 2 ? Array.from({ length: 50 }, () => it.gen(rng)) : [null];
+    for (const vars of draws) {
+      for (const s of itemTexts(it, vars)) {
+        if (typeof s !== 'string') continue;
+        for (const b of BANNED) assert.ok(!s.includes(b), `${it.id}: "${b}" in ${JSON.stringify(s.slice(0, 80))}`);
+      }
+    }
+  }
+});
+
 test('waves-2-07 (real/virtual image sign): the same keyboard for every draw', () => {
   const { items, PC } = load('waves');
   const it = items.find(x => x.id === 'waves-2-07');
