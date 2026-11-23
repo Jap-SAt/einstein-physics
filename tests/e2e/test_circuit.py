@@ -637,4 +637,89 @@ async def test_wire_readout_by_pointer():
         await s.close()
 
 
+# ───────────── Task 4: lecture content and worked examples ─────────────
+
+# one short Thai key phrase per misconception of spec §6.2, each must sit in a misconception box (.check .x)
+MISCONCEPTIONS = {
+    's1': ['ใช้หมดไป', 'จ่ายกระแสคงที่', 'เท่ากันเสมอ', 'เร็วเท่าแสง'],
+    's2': ['R ขึ้นกับ', 'ทุกสิ่ง'],
+    's3': ['ความต้านทานรวมเพิ่ม', 'หลอดแรก', 'สูตรของตัวเก็บประจุ'],
+    's4': ['ทวนทิศกระแส', 'ติดลบ'],
+    's5': ['วัตต์สูง', 'เต็มทันที', 'เส้นตรง'],
+}
+
+
+async def test_lecture_content():
+    """Task 4: five sections, each with a worked example (>= 2 steps) and a misconception box; every §6.2 misconception
+    named in a box; the key relations by their MathJax source; e stated in every example that uses it; links back to
+    estat s4/s5 and forward to nuclear s3; no Thai inside \\text{}; no magnetism; "สมมุติ" only in s4; MathJax clean;
+    every worked example fully opened fits a 390 px phone."""
+    import re
+    s = await open_page('circuit', viewport=(390, 844))
+    try:
+        await s.page.wait_for_selector('#lec .wx .wx-next')
+        raw = await s.page.evaluate("() => document.getElementById('lec-circuit').innerHTML")
+        assert 'กำลังจัดทำ' not in raw, 'placeholder text left'
+        for frag in ('I = \\dfrac{Q}{t}', 'V = \\varepsilon - Ir', 'R = \\dfrac{\\rho L}{A}', '\\dfrac{V^2}{R}',
+                     '\\tau = (R + r)C', '\\tau = RC', 'e^{-t/\\tau}'):
+            assert frag in raw, frag
+        bad = re.findall(r'\\text\{[^}]*[\u0E00-\u0E7F][^}]*\}', raw)
+        assert not bad, bad
+        r = await s.page.evaluate("""() => {
+            const lec = document.querySelector('#lec'); const out = []; let cur = null;
+            for (const el of lec.querySelectorAll('h2, .wx, .check, p, li, .feyn')) {
+                if (el.tagName === 'H2') { cur = { id: el.id, wx: [], x: [], text: '' }; out.push(cur); continue; }
+                if (!cur) continue;
+                if (el.classList.contains('wx')) cur.wx.push({ n: el.querySelectorAll('.wx-steps > li').length,
+                    q: el.querySelector('.wx-q').innerHTML, all: el.innerHTML });
+                else if (el.classList.contains('check')) cur.x.push(el.querySelector('.x').textContent);
+                cur.text += ' ' + el.textContent;
+            }
+            const hrefs = [...lec.querySelectorAll('a')].map(a => a.getAttribute('href'));
+            return { secs: out, sum: !!lec.querySelector('.sumbox'), hrefs,
+                     text: lec.textContent, nuc: !!document.querySelector('#lec-nuclear').content.querySelector('h2#s3') }; }""")
+        assert [x['id'] for x in r['secs']] == ['s1', 's2', 's3', 's4', 's5'], r['secs']
+        for sec in r['secs']:
+            assert sec['wx'] and all(w['n'] >= 2 for w in sec['wx']), (sec['id'], [w['n'] for w in sec['wx']])
+            assert sec['x'], ('misconception box', sec['id'])
+            for key in MISCONCEPTIONS[sec['id']]:
+                assert any(key in x for x in sec['x']), ('misconception not in a box', sec['id'], key, sec['x'])
+            for w in sec['wx']:
+                if '1.6\\times10^{-19}' in w['all']:
+                    assert '1.6\\times10^{-19}' in w['q'], ('e stated in the question', sec['id'], w['q'][:80])
+            if sec['id'] != 's4':
+                assert 'สมมุติ' not in sec['text'] and 'สมมติ' not in sec['text'], ('"สมมุติ" is reserved for s4', sec['id'])
+        assert 'ทิศที่สมมุติ' in r['secs'][3]['text'], 's4 names the assumed direction'
+        assert r['sum'], 'formula box'
+        for h in ('#circuit-sim', '#estat?s=s4', '#estat?s=s5'):
+            assert h in r['hrefs'], (h, r['hrefs'])
+        assert r['nuc'] and '#nuclear?s=s3' in r['hrefs'], r['hrefs']
+        for term in ('แรงเคลื่อนไฟฟ้า', 'ความต่างศักย์ระหว่างขั้ว', 'ความต้านทานภายใน', 'กระแสตามข้อตกลง'):
+            assert term in r['text'], term
+        for banned in ('แม่เหล็ก', 'เหนี่ยวนำ', 'V ระหว่างขั้ว'):
+            assert banned not in r['text'], banned
+        n = await s.page.locator('#lec .wx').count()
+        for i in range(n):
+            wx = s.page.locator('#lec .wx').nth(i)
+            for _ in range(12):
+                if not await wx.locator('.wx-next').count():
+                    break
+                await wx.locator('.wx-next').click()
+            assert await wx.locator('.wx-next').count() == 0, i
+        await s.page.evaluate("() => (window.MathJax && MathJax.startup && MathJax.startup.promise) || null")
+        await s.page.wait_for_timeout(800)
+        m = await s.page.evaluate("""() => ({
+            sw: document.documentElement.scrollWidth,
+            merr: document.querySelectorAll('#lec mjx-merror, #lec [data-mjx-error]').length,
+            raw: (document.querySelector('#lec').innerText.match(/\\\\[(\\[]/g) || []).length,
+            hidden: document.querySelectorAll('#lec .wx-steps > li[hidden]').length,
+            wide: [...document.querySelectorAll('#lec mjx-container, #lec svg.circ')]
+                .filter(x => x.getBoundingClientRect().right > window.innerWidth + 0.5).map(x => x.textContent.slice(0, 40)) })""")
+        assert m['hidden'] == 0 and m['merr'] == 0 and m['raw'] == 0, m
+        assert m['sw'] <= 390 and not m['wide'], m
+        assert not s.errors, s.errors
+    finally:
+        await s.close()
+
+
 run_tests(globals())
